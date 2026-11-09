@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kedabra</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%238b7bff'/%3E%3Cpath d='M11 8v16M11 16l9-8M11 16l9 8' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<style>
+:root{--bg:#0b0b10;--p1:#111118;--p2:#181822;--bd:#25252f;--tx:#ececf3;--mu:#8a8a9c;--ac:#8b7bff;--ok:#4ade80;--err:#f87171;--sh:0 10px 40px #0007}
+[data-theme=light]{--bg:#fafafc;--p1:#fff;--p2:#f1f1f6;--bd:#e2e2ea;--tx:#16161d;--mu:#6b6b7e;--ac:#6d5dfc;--ok:#16a34a;--err:#dc2626;--sh:0 10px 40px #0002}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--tx);font:15px/1.65 Inter,system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;overflow:hidden;-webkit-font-smoothing:antialiased}
+button,input,textarea{font:inherit;color:inherit}button{cursor:pointer;background:none;border:0}
+:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+.ic{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}.ic.f{fill:currentColor;stroke:none}.ic.ok{color:var(--ok)}.ic.bad{color:var(--err)}
+.ib{width:34px;height:34px;display:grid;place-items:center;border-radius:9px;color:var(--mu)}.ib:hover{background:var(--p2);color:var(--tx)}
+.btn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--bd);background:var(--p1);border-radius:10px;padding:6px 12px;font-size:14px}.btn:hover{border-color:var(--ac)}.btn.sm{padding:3px 10px;font-size:13px;text-decoration:none;color:var(--tx)}
+.mark{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--ac),#c084fc);color:#fff;font-weight:700;display:grid;place-items:center;flex:none}.mark.sm{width:26px;height:26px;font-size:13px;margin-top:2px}
+#side{width:264px;background:var(--p1);border-right:1px solid var(--bd);display:flex;flex-direction:column;padding:12px;gap:10px;z-index:20}
+.sh,.brand{display:flex;align-items:center;gap:10px}.sh{justify-content:space-between}.brand b{font-size:17px;letter-spacing:.2px}
+.newc{display:flex;align-items:center;gap:8px;background:var(--ac);color:#fff;border-radius:10px;padding:9px 12px;font-weight:500}.newc kbd{margin-left:auto;font:11px system-ui;opacity:.75}
+#sq{background:var(--p2);border:1px solid var(--bd);border-radius:9px;padding:7px 10px;outline:0;font-size:14px}#sq:focus{border-color:var(--ac)}
+#list{flex:1;overflow:auto;display:flex;flex-direction:column;gap:2px}
+.ci{display:flex;align-items:center;gap:6px;padding:7px 10px;border-radius:9px;cursor:pointer;color:var(--mu);font-size:14px}.ci b{flex:1;font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ci:hover,.ci.on{background:var(--p2);color:var(--tx)}.ci button{opacity:0;color:var(--mu);display:grid}.ci:hover button,.ci button:focus-visible{opacity:1}.ci button:hover{color:var(--err)}
+.foot{font-size:12px;color:var(--mu);padding:0 4px}
+#main{flex:1;display:flex;flex-direction:column;min-width:0}
+header{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--bd)}
+#title{flex:1;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mnav{display:none}
+.pill{font-size:12px;color:var(--mu);border:1px solid var(--bd);border-radius:99px;padding:1px 10px;display:none}.pill.on{display:inline-block}
+#fc{background:var(--p2);border-radius:99px;padding:0 7px;font-size:12px;color:var(--mu)}
+#msgs{flex:1;overflow:auto;scroll-behavior:smooth;padding:24px 16px}
+.col{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
+.row{display:flex;gap:12px}.row.u{justify-content:flex-end}.ub{background:var(--p2);border:1px solid var(--bd);border-radius:16px 16px 4px 16px;padding:9px 15px;white-space:pre-wrap;max-width:85%;overflow-wrap:anywhere}
+.body{flex:1;min-width:0}.md>:first-child{margin-top:0}.md p{margin:.55em 0}.md a{color:var(--ac)}.md ul,.md ol{padding-left:1.4em}
+.md table{border-collapse:collapse;display:block;overflow:auto}.md td,.md th{border:1px solid var(--bd);padding:5px 10px}
+.md blockquote{margin:.6em 0;padding-left:12px;border-left:3px solid var(--bd);color:var(--mu)}
+.md pre{margin:.8em 0;background:#0f0f16;border:1px solid #26263a;border-radius:11px;overflow:hidden}.md pre code{display:block;padding:12px 14px;overflow:auto;font:13px/1.55 ui-monospace,Menlo,Consolas,monospace;background:none!important}
+.md :not(pre)>code{background:var(--p2);padding:1px 6px;border-radius:6px;font:13px ui-monospace,Menlo,monospace}
+.cbar{display:flex;justify-content:space-between;align-items:center;padding:4px 8px 4px 14px;background:#161622;color:#9a9ab0;font-size:12px}.cbar button{display:flex;align-items:center;gap:5px;color:#9a9ab0;padding:3px 6px;border-radius:6px;font-size:12px}.cbar button:hover{background:#22223a;color:#fff}.cbar .ic{width:14px;height:14px}
+details.tool{border:1px solid var(--bd);background:var(--p1);border-radius:11px;margin:8px 0;font-size:13.5px}
+details.tool summary{display:flex;align-items:center;gap:9px;padding:7px 12px;cursor:pointer;list-style:none;color:var(--mu)}details.tool summary::-webkit-details-marker{display:none}
+details.tool summary b{color:var(--tx);font-weight:500}.dt{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.chev{transition:.15s}details[open] .chev{transform:rotate(90deg)}
+details.tool pre{margin:0;padding:8px 12px 10px;border-top:1px solid var(--bd);overflow:auto;max-height:240px;color:var(--mu);font:12px ui-monospace,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+.sp{width:15px;height:15px;border:2px solid var(--bd);border-top-color:var(--ac);border-radius:50%;animation:r .8s linear infinite;flex:none}@keyframes r{to{transform:rotate(360deg)}}
+.fcard{display:flex;align-items:center;gap:12px;border:1px solid var(--ac);border-radius:12px;padding:10px 12px;margin:10px 0;background:var(--p1);cursor:pointer}.fcard .fi{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.35}.fcard small{color:var(--mu);overflow:hidden;text-overflow:ellipsis}
+.err{border:1px solid var(--err);color:var(--err);border-radius:11px;padding:9px 13px;margin:8px 0;font-size:14px}.note{color:var(--mu);font-size:13px}
+.planbox,.progressbox,.retrybox,.summarybox{border:1px solid var(--bd);background:var(--p1);border-radius:11px;padding:10px 13px;margin:8px 0;font-size:13px}.planbox>div:first-child{display:flex;justify-content:space-between;gap:12px}.planbox small,.progressbox small,.retrybox small{color:var(--mu)}.planbox ol{margin:7px 0 0;padding-left:22px}.planbox li{padding:2px 0}.planbox li span{color:var(--mu)}.progressbox,.retrybox{display:flex;align-items:center;gap:10px}.progressbox>div,.retrybox>div{display:flex;flex-direction:column;min-width:0}.retrybox small{overflow-wrap:anywhere}.summarybox summary{cursor:pointer;color:var(--mu)}.summarybox pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 ui-monospace,Menlo,monospace;color:var(--mu);margin:8px 0 0;max-height:220px;overflow:auto}
+.caret{display:inline-block;width:8px;height:15px;background:var(--ac);border-radius:2px;margin-left:2px;vertical-align:-2px;animation:b 1s steps(2) infinite}@keyframes b{50%{opacity:0}}
+.dots span{display:inline-block;width:6px;height:6px;margin:0 2px;background:var(--mu);border-radius:50%;animation:d 1.2s infinite}.dots span:nth-child(2){animation-delay:.2s}.dots span:nth-child(3){animation-delay:.4s}@keyframes d{0%,80%,100%{opacity:.25}40%{opacity:1}}
+.acts{display:flex;gap:2px;margin-top:4px}.acts .ib{width:30px;height:30px}.acts .ic{width:16px;height:16px}
+#empty{max-width:640px;margin:8vh auto 0;text-align:center}#empty h1{font-size:34px;margin:14px 0 6px;letter-spacing:-.5px}#empty p{color:var(--mu);margin:0 0 26px}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;text-align:left}.card{border:1px solid var(--bd);background:var(--p1);border-radius:13px;padding:12px 14px}.card:hover{border-color:var(--ac)}.card b{display:block;font-weight:500}.card span{color:var(--mu);font-size:13px}
+#bar{padding:6px 16px 14px}.chatpreviews{max-width:760px;margin:0 auto 8px;display:flex;gap:8px;flex-wrap:wrap}.chatpreview{width:76px;height:76px;border:1px solid var(--bd);border-radius:10px;overflow:hidden;position:relative;background:var(--p2)}.chatpreview img{width:100%;height:100%;object-fit:cover}.chatpreview button{position:absolute;right:3px;top:3px;background:#000b;color:#fff;border-radius:6px;width:22px;height:22px}.chatpreview small{position:absolute;left:0;right:0;bottom:0;background:#000b;color:#fff;font-size:9px;padding:1px 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#box{max-width:760px;margin:auto;display:flex;align-items:flex-end;gap:8px;background:var(--p1);border:1px solid var(--bd);border-radius:18px;padding:8px 8px 8px 10px;box-shadow:var(--sh)}#box:focus-within{border-color:var(--ac)}#attach{width:36px;height:36px;border-radius:10px;color:var(--mu);display:grid;place-items:center;flex:none}#attach:hover{background:var(--p2);color:var(--tx)}#chatFiles{display:none}.user-attachments{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}.user-attachment{width:92px;border:1px solid var(--bd);border-radius:8px;overflow:hidden;background:var(--p1)}.user-attachment img{width:100%;height:72px;object-fit:cover;display:block}.user-attachment small{display:block;padding:3px 5px;font-size:10px;color:var(--mu);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+textarea{flex:1;background:none;border:0;outline:0;resize:none;max-height:200px;padding:7px 0;line-height:1.5}
+#go{width:36px;height:36px;border-radius:11px;background:var(--ac);color:#fff;display:grid;place-items:center;flex:none}#go:disabled{opacity:.35;cursor:default}
+.hint{max-width:760px;margin:6px auto 0;text-align:center;font-size:12px;color:var(--mu)}
+#drawer{width:380px;background:var(--p1);border-left:1px solid var(--bd);display:none;flex-direction:column;z-index:20}#drawer.on{display:flex}
+.dh{display:flex;align-items:center;border-bottom:1px solid var(--bd);padding-right:8px}.tabs{flex:1;display:flex}.tabs button{padding:12px 16px;color:var(--mu);border-bottom:2px solid transparent}.tabs button.on{color:var(--tx);border-color:var(--ac)}
+.pane{display:none;flex:1;min-height:0;flex-direction:column;font-size:13.5px}.pane.on{display:flex}
+.flist{overflow:auto;padding:8px}.frow{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:9px;cursor:pointer}.frow:hover{background:var(--p2)}.frow span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.frow small{color:var(--mu)}.frow button{color:var(--mu);opacity:0;display:grid}.frow:hover button{opacity:1}.frow button:hover{color:var(--err)}
+.vh{display:flex;align-items:center;gap:6px;padding:8px;border-bottom:1px solid var(--bd)}.vh b{flex:1;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vb{flex:1;overflow:auto;margin:0;padding:12px;font:12px/1.55 ui-monospace,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere}.vb img{max-width:100%}
+.empt{color:var(--mu);padding:20px;text-align:center}
+#tout{flex:1;overflow:auto;padding:10px 12px;font:12px/1.5 ui-monospace,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere}#tout .cmd{color:var(--ac)}#tout .e{color:var(--err)}
+.tline{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--bd);font:13px ui-monospace,Menlo,monospace}.tline input{flex:1;background:none;border:0;outline:0}
+.shade{position:fixed;inset:0;background:#000a;z-index:80;display:grid;place-items:center;padding:18px}.shade[hidden]{display:none}.lab{width:min(760px,100%);max-height:min(90vh,900px);overflow:auto;background:var(--p1);border:1px solid var(--bd);border-radius:18px;box-shadow:var(--sh);padding:18px}.labhead{display:flex;align-items:center;gap:10px;margin-bottom:6px}.labhead h2{font-size:18px;margin:0;flex:1}.labdesc{color:var(--mu);font-size:13px;margin:0 0 16px}.labgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.field{display:flex;flex-direction:column;gap:6px;min-width:0}.field label{font-size:12px;color:var(--mu)}.field select,.field textarea,.field input[type=file]{width:100%;background:var(--p2);border:1px solid var(--bd);border-radius:10px;padding:9px;color:var(--tx)}.field textarea{min-height:100px;resize:vertical}.labfull{grid-column:1/-1}.labactions{display:flex;align-items:center;gap:10px;margin-top:14px}.labactions .btn.primary{background:var(--ac);border-color:var(--ac);color:white}.labstatus{font-size:12px;color:var(--mu);margin-left:auto}.imgpreviews{display:flex;gap:8px;flex-wrap:wrap}.imgpreview{width:84px;height:84px;border:1px solid var(--bd);border-radius:9px;overflow:hidden;position:relative}.imgpreview img{width:100%;height:100%;object-fit:cover}.imgpreview button{position:absolute;right:3px;top:3px;background:#000b;color:#fff;border-radius:6px;width:22px;height:22px}.labresult{border:1px solid var(--bd);border-radius:11px;padding:12px;margin-top:12px}.labresult h3{font-size:13px;margin:0 0 8px}.labresult pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:0;color:var(--tx);font:13px/1.55 ui-monospace,Menlo,monospace}.labresult .meta{color:var(--mu);font-size:11px;margin-bottom:6px}.laberror{color:var(--err)}
+#ov{display:none}
+@media(max-width:860px){.mnav{display:grid}#side{position:fixed;inset:0 auto 0 0;transform:translateX(-100%);transition:.2s}body.nav #side{transform:none}body.nav #ov{display:block;position:fixed;inset:0;background:#0008;z-index:15}#drawer{position:fixed;inset:0 0 0 auto;width:min(92%,420px)}.cards{grid-template-columns:1fr}.hint{display:none}}
+</style></head><body>
+<svg width="0" height="0" style="position:absolute"><defs>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol><symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></symbol>
+<symbol id="i-stop" viewBox="0 0 24 24"><rect class="f" x="6" y="6" width="12" height="12" rx="2.5" fill="currentColor"/></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 012-2h9"/></symbol><symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></symbol>
+<symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></symbol><symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 20"/></symbol><symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v11H3z"/></symbol>
+<symbol id="i-terminal" viewBox="0 0 24 24"><path d="M4 6l6 6-6 6M12 19h8"/></symbol><symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4-4"/></symbol>
+<symbol id="i-code" viewBox="0 0 24 24"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/></symbol><symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></symbol>
+<symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5M16 5a3 3 0 010 6M18 15c2 .6 3 2.3 3 5"/></symbol><symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20l4-1 11-11-3-3L5 16z"/></symbol>
+<symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></symbol><symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
+<symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol><symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14A8 8 0 0110 4a8 8 0 1010 10z"/></symbol><symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6L7 7M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4"/></symbol>
+<symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></symbol><symbol id="i-redo" viewBox="0 0 24 24"><path d="M20 11a8 8 0 10-2 6M20 5v6h-6"/></symbol>
+<symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol><symbol id="i-back" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
+</defs></svg>
+<div id="ov"></div>
+<aside id="side">
+  <div class="sh"><div class="brand"><div class="mark">K</div><b>Kedabra</b></div><button class="ib" id="theme" aria-label="Toggle theme"></button></div>
+  <button class="newc" id="new"><svg class="ic"><use href="#i-plus"/></svg>New chat<kbd>Ctrl K</kbd></button>
+  <input id="sq" placeholder="Search chats" aria-label="Search chats">
+  <nav id="list"></nav><div class="foot">Chats are saved in this browser.</div>
+</aside>
+<main id="main">
+  <header><button class="ib mnav" id="menu" aria-label="Menu"><svg class="ic"><use href="#i-menu"/></svg></button><div id="title">New chat</div><span id="via" class="pill"></span>
+    <button class="btn" id="labBtn" title="Test text and vision models">Model Lab</button><button class="ib" id="exp" aria-label="Export chat" title="Export chat as Markdown"><svg class="ic"><use href="#i-down"/></svg></button>
+    <button class="btn" id="wsb"><svg class="ic"><use href="#i-folder"/></svg>Workspace<span id="fc">0</span></button></header>
+  <div id="msgs" role="log" aria-live="polite"></div>
+  <div id="bar"><div class="chatpreviews" id="chatPreviews"></div><div id="box"><input id="chatFiles" type="file" accept="image/png,image/jpeg,image/webp" multiple><button id="attach" type="button" aria-label="Attach images" title="Attach images"><svg class="ic"><use href="#i-image"/></svg></button><textarea id="in" rows="1" placeholder="Message Kedabra" aria-label="Message"></textarea><button id="go" aria-label="Send"></button></div>
+    <div class="hint">Enter to send, Shift+Enter for a new line. Attach up to 3 screenshots or images. Kedabra can make mistakes.</div></div>
+</main>
+<aside id="drawer"><div class="dh"><div class="tabs"><button class="on" data-p="files">Files</button><button data-p="tp">Terminal</button></div><button class="ib" id="dc" aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button></div>
+  <div class="pane on" id="files"></div>
+  <div class="pane" id="tp"><div id="tout"></div><div class="tline"><span>$</span><input id="tin" autocomplete="off" spellcheck="false" aria-label="Terminal input"></div></div></aside>
+<div class="shade" id="labShade" hidden>
+ <section class="lab" role="dialog" aria-modal="true" aria-labelledby="labTitle">
+  <div class="labhead"><div class="mark">K</div><h2 id="labTitle">Model Lab</h2><button class="ib" id="labClose" aria-label="Close model lab">×</button></div>
+  <p class="labdesc">Run standalone text or image-understanding tests against the configured models. Images are sent to your server-side provider key and are not added to your chat history.</p>
+  <div class="labgrid">
+   <div class="field"><label for="labModel">Model to test</label><select id="labModel"><option value="qwen">Qwen 3.8 Vision · Groq</option><option value="gemini">Gemini Vision · Google</option><option value="reasoning">Groq Reasoning · text-only</option><option value="both">Compare vision models</option><option value="all">Compare all configured models</option></select></div>
+   <div class="field"><label for="labFiles">Images (optional, up to 3)</label><input id="labFiles" type="file" accept="image/png,image/jpeg,image/webp" multiple></div>
+   <div class="field labfull"><label for="labPrompt">Test prompt</label><textarea id="labPrompt" placeholder="Example: Describe the scene, identify visible objects, and read any text accurately.">Describe what is in the image. Separate directly visible facts from guesses, and mention any text you can read.</textarea></div>
+   <div class="labfull"><div class="imgpreviews" id="labPreviews"></div></div>
+  </div>
+  <div class="labactions"><button class="btn primary" id="labRun">Run test</button><span class="labstatus" id="labStatus">Checking configured models…</span></div>
+  <div id="labResults" aria-live="polite"></div>
+ </section>
+</div>
+<script>
+const $=s=>document.querySelector(s);
+const I=(n,c='')=>`<svg class="ic ${c}"><use href="#i-${n}"/></svg>`;
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let chats=[];try{chats=JSON.parse(localStorage.kd_chats||'[]')}catch{}
+let cur=null,busy=false,ctl=null,files=[],view=null,q='',draftImages=[];
+const sid=localStorage.kd_sid||(localStorage.kd_sid=crypto.randomUUID());
+const save=()=>{try{localStorage.kd_chats=JSON.stringify(chats)}catch{}};
+const TM={web_search:['search','Searching the web'],fetch_url:['globe','Reading page'],run_python:['code','Running Python'],run_javascript:['code','Running JavaScript'],create_file:['file','Creating file'],write_files:['file','Writing files'],read_file:['file','Reading file'],edit_file:['edit','Editing file'],list_files:['list','Listing files'],terminal:['terminal','Running command'],present_file:['file','Sharing file'],spawn_subagents:['users','Subagents']};
+const SUG=[['Research a topic','Search the web and summarize what is happening in AI this week'],['Build a website','Create a landing page for a coffee shop and show it to me'],['Analyze data with Python','Generate sample sales data, analyze it, and plot a chart'],['Build a project with subagents','Make a small todo app, splitting the work across subagents']];
+marked.setOptions({gfm:true});
+const md=t=>DOMPurify.sanitize(marked.parse(t||''));
+
+function enhance(el){
+ el.querySelectorAll('pre').forEach(pre=>{if(pre.dataset.d)return;pre.dataset.d=1;const code=pre.querySelector('code');if(!code)return;
+  const lang=(code.className.match(/language-([\w-]+)/)||[])[1]||'text';try{hljs.highlightElement(code)}catch{}
+  const b=document.createElement('div');b.className='cbar';b.innerHTML=`<span>${esc(lang)}</span><button data-copy aria-label="Copy code">${I('copy')}Copy</button>`;pre.prepend(b)});
+ el.querySelectorAll('a').forEach(a=>{a.target='_blank';a.rel='noopener'});
+}
+function detail(p){const A=p.args||{},n=p.name;
+ return n==='spawn_subagents'?(A.tasks||[]).map(t=>t.name).join(', '):n==='write_files'?(A.files||[]).map(f=>f.path).join(', '):/^run_/.test(n)?String(A.code||'').split('\n')[0]:A.path||String(Object.values(A)[0]??'')}
+function toolHTML(p){
+ const [ic,lb]=TM[p.name]||['code',p.name],run=p.out===undefined,bad=!run&&/"error":/.test(p.out),sp=p.name==='spawn_subagents';
+ const st=run?'<i class="sp"></i>':bad?I('x','bad'):I('check','ok');
+ return `<details class="tool"${sp&&run?' open':''}><summary>${st}${I(ic)}<b>${esc(lb)}</b><span class="dt">${esc(detail(p).slice(0,90))}</span>${I('chev','chev')}</summary><pre>${p.log?esc(p.log.join('\n'))+'\n':''}${sp?'':esc(JSON.stringify(p.args,null,1))+'\n'}${run?'running...':esc(p.out)}</pre></details>`}
+function partHTML(p){
+ if(p.type==='text')return `<div class="md">${md(p.text)}</div>`;
+ if(p.type==='tool')return toolHTML(p);
+ if(p.type==='plan')return `<div class="planbox"><div><b>Execution plan</b><small>${esc(p.plan.objective||'')}</small></div><ol>${(p.plan.steps||[]).map(s=>`<li><b>${esc(s.title)}</b> <span>· ${esc(s.modelName||s.model)} <span class="muted">(${esc(s.model)})</span></span></li>`).join('')}</ol></div>`;
+ if(p.type==='progress')return `<div class="progressbox">${p.status==='completed'?I('check','ok'):'<i class="sp"></i>'}<div><b>${esc(p.title||'Working')}</b><small>Step ${p.index+1} of ${p.total} · ${esc(p.modelName||p.model||'')} · ${esc(p.status||'running')}</small></div></div>`;
+ if(p.type==='retry')return `<div class="retrybox"><i class="sp"></i><div><b>Retrying model providers · attempt ${p.attempt||1}</b><small>${esc(p.detail||'Provider unavailable')} · next retry in ${Math.max(1,Math.ceil((p.waitMs||1000)/1000))}s</small></div></div>`;
+ if(p.type==='status')return `<div class="note">${esc(p.status||'Working')}${p.detail?' — '+esc(p.detail):''}</div>`;
+ if(p.type==='summary')return `<details class="summarybox"><summary>Compact project memory updated</summary><pre>${esc(p.text)}</pre></details>`;
+ if(p.type==='vision')return `<details class="summarybox"><summary>Visual references analyzed · ${esc(p.model||'Vision model')} · ${p.count||0} image(s)</summary><pre>${esc(p.summary||'')}</pre></details>`;
+ if(p.type==='error')return `<div class="err">${esc(p.text)}</div>`;
+ if(p.type==='file')return `<div class="fcard" data-view="${esc(p.path)}">${I('file')}<div class="fi"><b>${esc(p.title)}</b><small>${esc(p.path)}</small></div><button class="btn sm" data-view="${esc(p.path)}">Preview</button><a class="btn sm" href="${esc(p.url)}" download="${esc(p.path.split('/').pop())}">Download</a></div>`}
+function partsHTML(m,live){
+ let h=(m.parts||[]).map(partHTML).join('');
+ if(live)h+=m.parts?.length&&m.parts[m.parts.length-1].type==='text'?'<span class="caret"></span>':m.parts?.length?'':'<span class="dots"><span></span><span></span><span></span></span>';
+ if(m.stopped)h+='<div class="note">Stopped.</div>';return h}
+function userAttachmentsHTML(items){return items?.length?`<div class="user-attachments">${items.map(im=>`<div class="user-attachment"><img src="${esc(im.thumbnail||im.preview||'')}" alt="${esc(im.name||'Attached image')}"><small>${esc(im.name||'Image')}</small></div>`).join('')}</div>`:''}
+function msgHTML(m,i){
+ if(m.role==='user')return `<div class="row u"><div class="ub">${esc(m.content)}${userAttachmentsHTML(m.attachments)}</div></div>`;
+ const last=i===cur.msgs.length-1,live=busy&&last;
+ const acts=live||!m.content&&!last?'':`<div class="acts"><button class="ib" data-mcopy="${i}" aria-label="Copy" title="Copy">${I('copy')}</button>${last&&!cur.msgs[i-1]?.attachments?.length?`<button class="ib" id="rg" aria-label="Regenerate" title="Regenerate">${I('redo')}</button>`:''}</div>`;
+ return `<div class="row a"><div class="mark sm">K</div><div class="body">${partsHTML(m,live)}${acts}</div></div>`}
+function draw(){
+ const m=$('#msgs');
+ if(!cur||!cur.msgs.length){m.innerHTML=`<div id="empty"><div class="mark" style="margin:auto;width:44px;height:44px;font-size:20px">K</div><h1>What can I build for you?</h1><p>Search the web, write and run code, create files, and delegate to subagents.</p><div class="cards">${SUG.map(s=>`<button class="card" data-s="${esc(s[1])}"><b>${s[0]}</b><span>${s[1]}</span></button>`).join('')}</div></div>`;return}
+ m.innerHTML=`<div class="col">${cur.msgs.map(msgHTML).join('')}</div>`;enhance(m);m.scrollTop=m.scrollHeight}
+let raf=0;
+function live(){raf=0;const m=$('#msgs'),el=m.querySelector('.row.a:last-child .body');if(!el)return;
+ const stick=m.scrollHeight-m.scrollTop-m.clientHeight<140,a=cur.msgs[cur.msgs.length-1];
+ el.innerHTML=partsHTML(a,true);enhance(el);if(stick){m.style.scrollBehavior='auto';m.scrollTop=m.scrollHeight;m.style.scrollBehavior=''}}
+const tick=()=>raf||(raf=requestAnimationFrame(live));
+
+function sidebar(){
+ $('#list').innerHTML=chats.filter(c=>c.title.toLowerCase().includes(q)).map(c=>`<div class="ci ${c===cur?'on':''}" data-id="${c.id}" tabindex="0"><b>${esc(c.title)}</b><button data-del="${c.id}" aria-label="Delete chat">${I('trash')}</button></div>`).join('')||'<div class="empt">No chats yet</div>';
+ $('#title').textContent=cur?.title||'New chat'}
+function ui(){const g=$('#go');g.innerHTML=busy?I('stop','f'):I('up');g.setAttribute('aria-label',busy?'Stop':'Send');g.disabled=!busy&&!$('#in').value.trim()&&!draftImages.length;$('#fc').textContent=files.length}
+function ev(e,a){
+ if(e.t==='delta'){const l=a.parts[a.parts.length-1];if(l&&l.type==='text'&&l.live)l.text+=e.text;else a.parts.push({type:'text',text:e.text,live:true})}
+ else if(e.t==='reset_delta'){const l=a.parts[a.parts.length-1];if(l&&l.type==='text'&&l.live)a.parts.pop()}
+ else if(e.t==='reset_all_text')a.parts=a.parts.filter(p=>p.type!=='text');
+ else if(e.t==='retry_clear')a.parts=a.parts.filter(p=>p.type!=='retry');
+ else if(e.t==='text')a.parts.push({type:'text',text:e.text});
+ else if(e.t==='plan')a.parts.push({type:'plan',plan:e.plan});
+ else if(e.t==='step'){let p=a.parts.find(x=>x.type==='progress');if(!p){p={type:'progress'};a.parts.push(p)}Object.assign(p,e)}
+ else if(e.t==='step_done'){const p=a.parts.find(x=>x.type==='progress');if(p)p.status='completed'}
+ else if(e.t==='retry'){let p=a.parts.find(x=>x.type==='retry');if(!p){p={type:'retry'};a.parts.push(p)}Object.assign(p,e)}
+ else if(e.t==='status'){let p=a.parts.find(x=>x.type==='status');if(!p){p={type:'status'};a.parts.push(p)}Object.assign(p,e)}
+ else if(e.t==='summary')a.parts.push({type:'summary',text:e.summary});
+ else if(e.t==='vision_context'){a.parts.push({type:'vision',summary:e.summary,model:e.model,count:e.count,files:e.files||[]});const idx=cur?.msgs.indexOf(a)??-1;const user=idx>0?cur.msgs[idx-1]:null;if(user?.attachments){user.attachments.forEach(image=>{delete image.data;delete image.preview;deleteChatImage(image.attachmentId);delete image.attachmentId});user.visionAnalyzed=true}}
+ else if(e.t==='tool'){let p=a.parts.find(x=>x.type==='tool'&&x.id===e.id);if(!p){p={type:'tool',id:e.id};a.parts.push(p)}Object.assign(p,{name:e.name,args:e.args,out:undefined})}
+ else if(e.t==='result'){const p=a.parts.find(x=>x.id===e.id);if(p)p.out=e.out}
+ else if(e.t==='sub'){const p=a.parts.find(x=>x.id===e.id);if(p)(p.log=p.log||[]).push(e.line)}
+ else if(e.t==='file'){a.parts.push({type:'file',path:e.path,url:e.url,title:e.title});refreshFiles()}
+ else if(e.t==='via'){a.kind=e.model;const v=$('#via');v.textContent=(e.modelName||e.model)+' · '+e.via;v.classList.add('on')}
+ else if(e.t==='done'){a.done=true;a.content=e.answer||a.parts.filter(p=>p.type==='text').map(p=>p.text).join('\n')}
+ else if(e.t==='error')a.parts.push({type:'error',text:e.error});
+}
+async function send(text,resumeMessage=null){
+ const resuming=!!resumeMessage;text=(resuming?'':(text??$('#in').value).trim());if((!text&&!resuming&&!draftImages.length)||busy)return;
+ if(!resuming){$('#in').value='';fit()}
+ if(!resuming){if(!cur){cur={id:crypto.randomUUID(),title:(text||'Visual reference').slice(0,48),msgs:[]};chats.unshift(cur)}const attachments=draftImages.map(({name,mimeType,thumbnail,attachmentId})=>({name,mimeType,thumbnail,attachmentId}));cur.msgs.push({role:'user',content:text,attachments});draftImages.forEach(im=>URL.revokeObjectURL(im.preview));draftImages=[];renderChatPreviews();$('#chatFiles').value='';resumeMessage={role:'assistant',content:'',parts:[]};cur.msgs.push(resumeMessage)}
+ const a=resumeMessage,jobId=a.jobId||(a.jobId=crypto.randomUUID());a.stopped=false;a.running=true;save();let resumeDelay=1500,finished=!!a.done;
+ const waitToResume=ms=>new Promise(resolve=>{const signal=ctl?.signal;if(!signal||signal.aborted)return resolve();let timer;const done=()=>{clearTimeout(timer);signal.removeEventListener('abort',done);resolve()};timer=setTimeout(done,ms);signal.addEventListener('abort',done,{once:true})});
+ busy=true;ctl=new AbortController();ui();sidebar();draw();
+ while(!finished&&!a.stopped){
+  try{
+   const messages=cur.msgs.slice(0,-1).filter(m=>m.content||m.role==='user').map(m=>({role:m.role,content:m.content||''}));
+   const user=[...cur.msgs.slice(0,-1)].reverse().find(m=>m.role==='user');
+   const images=[];
+   if(user&&!user.visionAnalyzed)for(const im of user.attachments||[]){if(im.data)images.push({name:im.name,mimeType:im.mimeType,data:im.data});else if(im.attachmentId)images.push({name:im.name,mimeType:im.mimeType,data:await getChatImage(im.attachmentId)})}
+   const r=await fetch('/api/chat',{method:'POST',signal:ctl.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({sid,jobId,messages,...(images.length?{images}:{})})});
+   if(!r.ok||!r.body){const message='Server error ('+r.status+'). Check your Vercel deployment and Blob configuration.';if(r.status>=500||[408,425,429].includes(r.status)){let p=a.parts.find(x=>x.type==='retry');if(!p){p={type:'retry'};a.parts.push(p)}Object.assign(p,{attempt:(p.attempt||0)+1,waitMs:resumeDelay,detail:message});tick();await waitToResume(resumeDelay);if(ctl.signal.aborted){a.stopped=true;break}resumeDelay=Math.min(resumeDelay*1.7,15000);continue}throw new Error(message)}
+   const rd=r.body.getReader(),dec=new TextDecoder();let buf='';
+   for(;;){const{done,value}=await rd.read();if(done)break;buf+=dec.decode(value,{stream:true});let i;
+    while((i=buf.indexOf('\n'))>=0){const line=buf.slice(0,i);buf=buf.slice(i+1);if(line)try{const event=JSON.parse(line);ev(event,a);if(event.t==='done')finished=true;if(event.t==='error'){finished=true;a.failed=true}if(event.t!=='delta')save()}catch{}}tick()}
+   if(!finished&&!a.stopped){let p=a.parts.find(x=>x.type==='retry');if(!p){p={type:'retry'};a.parts.push(p)}Object.assign(p,{attempt:(p.attempt||0)+1,waitMs:resumeDelay,detail:'Task checkpoint saved. Reconnecting to continue.'});tick();await waitToResume(resumeDelay);if(ctl.signal.aborted){a.stopped=true;break}resumeDelay=Math.min(Math.round(resumeDelay*1.6),15000)}
+  }catch(e){
+   if(e.name==='AbortError'){a.stopped=true;break}
+   if((e.message&&/^Server error \((400|401|403|404|405)/.test(e.message))||/attachment|does not support IndexedDB|could not open attachment storage/i.test(e.message||'')){a.parts.push({type:'error',text:e.message});a.failed=true;break}
+   let p=a.parts.find(x=>x.type==='retry');if(!p){p={type:'retry'};a.parts.push(p)}Object.assign(p,{attempt:(p.attempt||0)+1,waitMs:resumeDelay,detail:e.message||'Connection interrupted; retrying.'});tick();await waitToResume(resumeDelay);if(ctl.signal.aborted){a.stopped=true;break}resumeDelay=Math.min(Math.round(resumeDelay*1.6),15000)
+  }
+ }
+ a.parts.forEach(p=>{p.live=false;if(p.type==='tool'&&p.out===undefined)p.out=a.stopped?'(stopped)':'(no result received)' });
+ a.content=a.parts.filter(p=>p.type==='text').map(p=>p.text).join('\n');a.running=false;
+ busy=false;ctl=null;$('#via').classList.remove('on');save();ui();draw();sidebar();refreshFiles()}
+
+const stop=()=>ctl&&ctl.abort();
+function regen(){if(busy||!cur)return;const u=cur.msgs[cur.msgs.length-2];if(!u)return;cur.msgs.splice(-2);send(u.content)}
+function newChat(){if(busy)return;draftImages.forEach(im=>{URL.revokeObjectURL(im.preview);deleteChatImage(im.attachmentId)});draftImages=[];renderChatPreviews();cur=null;view=null;sidebar();draw();$('#in').focus();document.body.classList.remove('nav')}
+function fit(){const t=$('#in');t.style.height='auto';t.style.height=Math.min(t.scrollHeight,200)+'px'}
+
+async function refreshFiles(){
+ try{files=(await(await fetch('/api/terminal?sid='+sid)).json()).files||[]}catch{}
+ renderFiles();ui()}
+const IMG=/\.(png|jpe?g|gif|webp|svg)$/i;
+function renderFiles(){
+ const el=$('#files');
+ if(view){const f=files.find(x=>x.path===view)||{url:'#'};
+  el.innerHTML=`<div class="vh"><button class="ib" data-back aria-label="Back">${I('back')}</button><b>${esc(view)}</b><button class="ib" data-vcopy aria-label="Copy">${I('copy')}</button><a class="ib" href="${esc(f.url)}" download="${esc(view.split('/').pop())}" aria-label="Download">${I('down')}</a></div>${IMG.test(view)?`<div class="vb"><img src="${esc(f.url)}" alt=""></div>`:'<pre class="vb" id="vb">Loading...</pre>'}`;
+  if(!IMG.test(view))term('cat '+JSON.stringify(view)).then(t=>{const b=$('#vb');if(b)b.textContent=t});return}
+ el.innerHTML=files.length?`<div class="flist">${files.map(f=>`<div class="frow" data-view="${esc(f.path)}" tabindex="0">${I('file')}<span>${esc(f.path)}</span><small>${f.size>1024?(f.size/1024).toFixed(1)+' KB':f.size+' B'}</small><button data-rm="${esc(f.path)}" aria-label="Delete file">${I('trash')}</button></div>`).join('')}</div>`:'<div class="empt">No files yet. Ask Kedabra to build something and it will show up here.</div>'}
+function openFile(p){view=p;$('#drawer').classList.add('on');tab('files');renderFiles()}
+async function term(cmd){const r=await fetch('/api/terminal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid,cmd})});return (await r.json()).out}
+function tab(n){document.querySelectorAll('.tabs button,.pane').forEach(x=>x.classList.remove('on'));document.querySelector(`.tabs [data-p=${n}]`).classList.add('on');$('#'+n).classList.add('on');if(n==='tp')$('#tin').focus()}
+const hist=[];let hi=0;
+function line(t,c){const d=document.createElement('div');if(c)d.className=c;d.textContent=t;$('#tout').append(d);$('#tout').scrollTop=1e9}
+line('Real shell. Try: ls, cat file, grep -n foo *.js, node app.js','');
+$('#tin').onkeydown=async e=>{
+ if(e.key==='ArrowUp'&&hist.length){hi=Math.max(0,hi-1);e.target.value=hist[hi];e.preventDefault()}
+ if(e.key==='ArrowDown'){hi=Math.min(hist.length,hi+1);e.target.value=hist[hi]||''}
+ if(e.key!=='Enter')return;const c=e.target.value.trim();if(!c)return;hist.push(c);hi=hist.length;e.target.value='';line('$ '+c,'cmd');
+ try{line(await term(c))}catch(x){line(x.message,'e')}refreshFiles()};
+
+function flash(b,html){const o=b.innerHTML;b.innerHTML=html;setTimeout(()=>b.innerHTML=o,1200)}
+const copy=async(t,b,h)=>{try{await navigator.clipboard.writeText(t);flash(b,h)}catch{}};
+document.addEventListener('click',e=>{
+ const t=e.target,c=s=>t.closest(s);let x;
+ if(x=c('[data-copy]'))copy(x.closest('pre').querySelector('code').textContent,x,I('check','ok')+'Copied');
+ else if(x=c('[data-mcopy]'))copy(cur.msgs[x.dataset.mcopy].content,x,I('check','ok'));
+ else if(x=c('[data-vcopy]'))copy($('#vb')?.textContent||'',x,I('check','ok'));
+ else if(c('#rg'))regen();
+ else if(x=c('[data-s]'))send(x.dataset.s);
+ else if(x=c('[data-rm]')){e.stopPropagation();if(confirm('Delete '+x.dataset.rm+'?'))term('rm '+JSON.stringify(x.dataset.rm)).then(()=>{if(view===x.dataset.rm)view=null;refreshFiles()})}
+ else if(c('[data-back]')){view=null;renderFiles()}
+ else if(x=c('a[download]')){}
+ else if(x=c('[data-view]'))openFile(x.dataset.view);
+ else if(x=c('[data-del]')){e.stopPropagation();const id=x.dataset.del,removed=chats.find(k=>k.id===id);removed?.msgs?.forEach(m=>m.attachments?.forEach(im=>deleteChatImage(im.attachmentId)));chats=chats.filter(k=>k.id!==id);if(cur?.id===id)cur=null;save();sidebar();draw()}
+ else if(x=c('.ci')){if(busy)return;cur=chats.find(k=>k.id===x.dataset.id);view=null;sidebar();draw();document.body.classList.remove('nav')}
+ else if(x=c('.tabs button'))tab(x.dataset.p);
+});
+document.addEventListener('dblclick',e=>{const x=e.target.closest('.ci');if(!x)return;const k=chats.find(c=>c.id===x.dataset.id),n=prompt('Rename chat',k.title);if(n&&n.trim()){k.title=n.trim().slice(0,60);save();sidebar()}});
+$('#go').onclick=()=>busy?stop():send();
+$('#in').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();send()}};
+$('#in').oninput=()=>{fit();ui()};
+$('#new').onclick=newChat;$('#menu').onclick=()=>document.body.classList.toggle('nav');$('#ov').onclick=()=>document.body.classList.remove('nav');
+$('#wsb').onclick=()=>{$('#drawer').classList.toggle('on');refreshFiles()};$('#dc').onclick=()=>$('#drawer').classList.remove('on');
+$('#sq').oninput=e=>{q=e.target.value.toLowerCase();sidebar()};
+$('#exp').onclick=()=>{if(!cur)return;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([cur.msgs.map(m=>(m.role==='user'?'## You\n\n':'## Kedabra\n\n')+m.content).join('\n\n')],{type:'text/markdown'}));a.download=cur.title.replace(/[^\w-]+/g,'_')+'.md';a.click()};
+document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='k'){e.preventDefault();newChat()}if(e.key==='Escape'&&busy)stop()});
+
+// Standalone text + vision test bench. The image is resized in-browser before posting
+// so a few photos remain comfortably below Vercel's function request-body limit.
+let labImages=[],labModels={};
+function labStatus(t){$('#labStatus').textContent=t}
+async function loadLabModels(){
+ try{const r=await fetch('/api/vision');if(!r.ok)throw new Error('status '+r.status);labModels=await r.json();
+  const opts=[['qwen','Qwen 3.8 Vision · Groq'],['gemini','Gemini Vision · Google'],['reasoning','Groq Reasoning · text-only'],['both','Compare vision models'],['all','Compare all configured models']];
+  $('#labModel').innerHTML=opts.map(([id,label])=>`<option value="${id}" ${id!=='both'&&id!=='all'&&!labModels[id]?.available?'disabled':''} ${id==='both'&&!(labModels.qwen?.available&&labModels.gemini?.available)?'disabled':''} ${id==='all'&&!(labModels.qwen?.available||labModels.gemini?.available)?'disabled':''}>${label}${!['both','all'].includes(id)&&!labModels[id]?.available?' · not configured':''}</option>`).join('');
+  const preferred=labModels.qwen?.available?'qwen':labModels.gemini?.available?'gemini':labModels.reasoning?.available?'reasoning':'qwen';$('#labModel').value=preferred;
+  labStatus([labModels.qwen?.available?'Groq connected':'Groq key missing',labModels.gemini?.available?'Google connected':'Google key missing'].join(' · '));
+ }catch(e){labStatus('Could not load model status: '+e.message)}
+}
+function fileToDataUrl(blob){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=()=>reject(new Error('Could not read image'));r.readAsDataURL(blob)})}
+let imageDBPromise;
+function openImageDB(){
+ if(!('indexedDB' in window))return Promise.reject(new Error('This browser does not support IndexedDB for resumable image attachments.'));
+ if(!imageDBPromise)imageDBPromise=new Promise((resolve,reject)=>{const req=indexedDB.open('kedabra-attachments',1);req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains('images'))req.result.createObjectStore('images')};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error||new Error('Could not open attachment storage'))});
+ return imageDBPromise;
+}
+async function putChatImage(id,mimeType,base64){const db=await openImageDB();const bytes=Uint8Array.from(atob(base64),c=>c.charCodeAt(0));const blob=new Blob([bytes],{type:mimeType});return new Promise((resolve,reject)=>{const tx=db.transaction('images','readwrite');tx.objectStore('images').put(blob,id);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||new Error('Could not save image attachment'))})}
+async function getChatImage(id){const db=await openImageDB();return new Promise((resolve,reject)=>{const tx=db.transaction('images','readonly'),req=tx.objectStore('images').get(id);req.onsuccess=async()=>{if(!req.result)return reject(new Error('An attached image is missing from local browser storage. Reattach it and try again.'));try{resolve((await fileToDataUrl(req.result)).split(',')[1])}catch(e){reject(e)}};req.onerror=()=>reject(req.error||new Error('Could not retrieve image attachment'))})}
+async function deleteChatImage(id){if(!id)return;try{const db=await openImageDB();await new Promise((resolve,reject)=>{const tx=db.transaction('images','readwrite');tx.objectStore('images').delete(id);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}catch{}}
+function canvasBlob(canvas,type,quality){return new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('Image compression failed')),type,quality))}
+async function compressLabImage(file){
+ if(!['image/png','image/jpeg','image/webp'].includes(file.type))throw new Error(file.name+': use PNG, JPG or WebP.');
+ const bitmap=await createImageBitmap(file);const scale=Math.min(1,1600/Math.max(bitmap.width,bitmap.height));
+ const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));
+ const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close?.();
+ let blob=await canvasBlob(canvas,'image/jpeg',.84);if(blob.size>900*1024)blob=await canvasBlob(canvas,'image/jpeg',.68);
+ if(blob.size>1_000_000)throw new Error(file.name+': image is too large after compression.');
+ const thumb=document.createElement('canvas'),ts=Math.min(1,180/Math.max(canvas.width,canvas.height));thumb.width=Math.max(1,Math.round(canvas.width*ts));thumb.height=Math.max(1,Math.round(canvas.height*ts));thumb.getContext('2d').drawImage(canvas,0,0,thumb.width,thumb.height);
+ return {name:file.name,mimeType:'image/jpeg',data:(await fileToDataUrl(blob)).split(',')[1],preview:URL.createObjectURL(blob),thumbnail:thumb.toDataURL('image/jpeg',.62),size:blob.size};
+}
+function renderChatPreviews(){
+ $('#chatPreviews').innerHTML=draftImages.map((im,i)=>`<div class="chatpreview"><img src="${im.preview}" alt="${esc(im.name)}"><small>${esc(im.name)}</small><button type="button" data-chat-remove="${i}" aria-label="Remove ${esc(im.name)}">×</button></div>`).join('');ui();
+}
+$('#attach').onclick=()=>{if(!busy)$('#chatFiles').click()};
+$('#chatFiles').addEventListener('change',async e=>{
+ const picked=[...e.target.files];e.target.value='';if(draftImages.length+picked.length>3){alert('You can attach up to three images per message.');return}
+ const converted=[];
+ try{for(const file of picked){const image=await compressLabImage(file);image.attachmentId=crypto.randomUUID();await putChatImage(image.attachmentId,image.mimeType,image.data);converted.push(image)}
+  const sum=[...draftImages,...converted].reduce((n,x)=>n+x.size,0);if(sum>2_450_000)throw new Error('Combined compressed images must stay below 2.45 MB. Remove an image or use smaller files.');
+  draftImages.push(...converted);renderChatPreviews();
+ }catch(err){for(const image of converted){URL.revokeObjectURL(image.preview);deleteChatImage(image.attachmentId)}alert(err.message)}
+});
+$('#chatPreviews').addEventListener('click',e=>{const b=e.target.closest('[data-chat-remove]');if(!b)return;const [im]=draftImages.splice(+b.dataset.chatRemove,1);if(im){URL.revokeObjectURL(im.preview);deleteChatImage(im.attachmentId)}renderChatPreviews()});
+function renderLabImages(){
+ $('#labPreviews').innerHTML=labImages.map((im,i)=>`<div class="imgpreview"><img src="${im.preview}" alt="${esc(im.name)}"><button type="button" data-lab-remove="${i}" aria-label="Remove image">×</button></div>`).join('');
+}
+$('#labFiles').addEventListener('change',async e=>{
+ const picked=[...e.target.files];e.target.value='';if(labImages.length+picked.length>3){labStatus('Choose up to three images total. Remove an image first.');return}
+ try{const converted=await Promise.all(picked.map(compressLabImage));const sum=[...labImages,...converted].reduce((n,x)=>n+x.size,0);if(sum>2_450_000){converted.forEach(x=>URL.revokeObjectURL(x.preview));throw new Error('Combined compressed images must stay below 2.45 MB. Remove an image or use smaller files.')}
+  labImages.push(...converted);renderLabImages();labStatus(`${labImages.length} image(s) ready`)
+ }catch(err){labStatus(err.message)}
+});
+$('#labPreviews').addEventListener('click',e=>{const b=e.target.closest('[data-lab-remove]');if(!b)return;const [im]=labImages.splice(+b.dataset.labRemove,1);if(im)URL.revokeObjectURL(im.preview);renderLabImages();labStatus(`${labImages.length} image(s) ready`)});
+$('#labBtn').onclick=()=>{$('#labShade').hidden=false;loadLabModels();$('#labPrompt').focus()};
+$('#labClose').onclick=()=>{$('#labShade').hidden=true};
+$('#labShade').addEventListener('click',e=>{if(e.target===$('#labShade'))$('#labShade').hidden=true});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')$('#labShade').hidden=true});
+$('#labRun').onclick=async()=>{
+ const prompt=$('#labPrompt').value.trim(),model=$('#labModel').value;if(!prompt){labStatus('Enter a test prompt.');return}if(model==='reasoning'&&labImages.length){labStatus('Groq Reasoning is text-only. Remove images or choose a vision model.');return}
+ const btn=$('#labRun');btn.disabled=true;btn.textContent='Testing…';$('#labResults').innerHTML='';labStatus('Sending test to selected model(s)…');
+ const started=performance.now();
+ try{
+  const r=await fetch('/api/vision',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model,prompt,images:labImages.map(({mimeType,data,name})=>({mimeType,data,name}))})});
+  const data=await r.json();if(!r.ok)throw new Error(data.error||'Request failed ('+r.status+')');
+  $('#labResults').innerHTML=(data.results||[]).map(item=>`<section class="labresult"><h3>${esc(item.label||item.model||'Model result')}</h3><div class="meta">${esc(item.model||'')} · ${item.ms??0} ms${item.usage?.total_tokens?' · '+item.usage.total_tokens+' tokens':''}</div><pre class="${item.error?'laberror':''}">${esc(item.error||item.text||'(No response text)')}</pre></section>`).join('')||'<div class="note">No model returned a result.</div>';
+  labStatus(`Completed in ${Math.round(performance.now()-started)} ms`);
+ }catch(err){$('#labResults').innerHTML=`<div class="err">${esc(err.message)}</div>`;labStatus('Test failed')}
+ finally{btn.disabled=false;btn.textContent='Run test'}
+};
+
+function theme(t){document.documentElement.dataset.theme=t;localStorage.kd_theme=t;$('#theme').innerHTML=I(t==='dark'?'sun':'moon')}
+$('#theme').onclick=()=>theme(document.documentElement.dataset.theme==='dark'?'light':'dark');
+theme(localStorage.kd_theme||(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark'));
+const pendingChat=[...chats].reverse().find(chat=>{const last=chat.msgs?.[chat.msgs.length-1];return last?.role==='assistant'&&last.jobId&&!last.done&&!last.stopped&&!last.failed});
+if(pendingChat)cur=pendingChat;
+sidebar();draw();ui();refreshFiles();
+if(pendingChat)send('',pendingChat.msgs[pendingChat.msgs.length-1]);
+</script></body></html>
