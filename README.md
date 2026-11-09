@@ -6,7 +6,7 @@ Kedabra is a browser-based AI coding/work agent with a persistent cloud workspac
 
 ### A. Put the files in GitHub
 
-1. Download and extract `kedabra-github-ready.zip`.
+1. Download and extract `kedabra-agent-loop-fix.zip`.
 2. Create a new GitHub repository.
 3. Upload the **contents** of the extracted folder, not the folder itself. The repository root must directly contain `index.html`, `package.json`, `vercel.json`, `api/`, and `runner/`.
 4. Commit the files to the repository's main branch.
@@ -27,11 +27,14 @@ kedabra/
 ├── api/
 │   ├── _lib.js
 │   ├── chat.js
+│   ├── agent-guards.js
 │   ├── terminal.js
 │   └── vision.js
 ├── runner/
 │   └── py.mjs
 └── tests/
+    ├── agent-guards.test.js
+    ├── chat-final-answer.test.js
     ├── chat-vision-wiring.test.js
     └── vision.test.js
 ```
@@ -204,10 +207,13 @@ Provider failures trigger key/model fallback and retries. If every configured ke
 | File | Purpose |
 |---|---|
 | `index.html` | Complete browser interface, chat history, task progress, workspace drawer, terminal UI and Model Lab |
-| `api/chat.js` | Planner, model router, agent loop, tool execution, retries, checkpoints, compact summaries and final synthesis |
+| `api/chat.js` | Planner, model router, agent loop, tool execution, duplicate-read protection, retries, checkpoints, compact summaries and final synthesis |
+| `api/agent-guards.js` | Detects progress-only answers, caches safe read operations and identifies workspace-changing tools |
 | `api/_lib.js` | Blob-backed workspace files, shell helpers and task checkpoint storage |
 | `api/terminal.js` | Workspace file listing and terminal API |
 | `api/vision.js` | Shared Qwen/Gemini image-analysis functions and the Model Lab test endpoint |
+| `tests/agent-guards.test.js` | Regression tests for duplicate reads, tool budgets and progress-only response detection |
+| `tests/chat-final-answer.test.js` | Ensures completed answers appear in the chat UI without duplication |
 | `tests/vision.test.js` | Mocked multimodal provider tests; run them with `npm test` |
 | `tests/chat-vision-wiring.test.js` | Checks that normal chat sends images through visual analysis before planning |
 | `runner/py.mjs` | Isolated Pyodide Python runner |
@@ -225,3 +231,12 @@ Provider failures trigger key/model fallback and retries. If every configured ke
 - Workspace files and task checkpoints are currently stored using public Vercel Blob objects. Anyone who obtains a Blob URL may be able to read that object. Do not store secrets, passwords, private source code, or sensitive files in this version.
 - Vercel Functions have a maximum execution duration. The chat engine checkpoints work and the browser reconnects; it does not keep one serverless function alive forever. The included `vercel.json` sets a 300-second maximum. On Hobby, that limit is available with Fluid Compute; without Fluid Compute, the configured limit may be lower. See Vercel's current plan/runtime limits before relying on long unattended tasks.
 - Model API usage may incur charges or consume free-tier quotas. Check each provider's current pricing, rate limits, and model availability.
+
+
+## Agent execution safeguards
+
+The agent now caches repeated `read_file`, `list_files`, and read-only terminal requests for an unchanged workspace revision. Terminal and Python workspace snapshots are reused briefly within a warm serverless instance instead of downloading the same files for every command. Writes invalidate the snapshot and the per-task read cache so edited files are read fresh.
+
+The execution loop also detects progress-only responses (for example, “I’ll start by inspecting…”), asks the model to continue with actual work, switches to the reasoning model after repeated non-answers, and does not mark a progress statement as a successful result. Each step has a bounded tool-call budget to prevent endless tool loops.
+
+Run the regression suite with `npm test`.

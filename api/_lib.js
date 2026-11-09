@@ -10,12 +10,60 @@ const root = s => `ws/${String(s || 'anon').replace(/[^\w-]/g, '')}/`;
 const norm = p => String(p || '').replace(/\\/g, '/').replace(/^\/+/, '').replace(/\.\.+\/?/g, '').replace(/\/+/g, '/');
 const TYPES = { html: 'text/html', css: 'text/css', js: 'text/javascript', json: 'application/json', md: 'text/markdown', svg: 'image/svg+xml', csv: 'text/csv', png: 'image/png', jpg: 'image/jpeg', py: 'text/x-python' };
 
+// Reuse workspace downloads during a single warm function instance. Terminal and
+// Python tools often need the same source files; re-downloading them per call is wasteful.
+const snapshotCache = new Map();
+const snapshotInflight = new Map();
+const workspaceVersions = new Map();
+const cacheKey = sid => root(sid);
+function invalidateWorkspace(sid) {
+  const key = cacheKey(sid);
+  workspaceVersions.set(key, (workspaceVersions.get(key) || 0) + 1);
+  for (const id of snapshotCache.keys()) if (id.startsWith(key + '|')) snapshotCache.delete(id);
+}
+
+export async function getWorkspaceSnapshot(sid, { limit = 200, filter = null } = {}) {
+  const key = cacheKey(sid);
+  const version = workspaceVersions.get(key) || 0;
+  const filterTag = filter?.tag || 'all';
+  const snapshotId = `${key}|${limit}|${filterTag}`;
+  const cached = snapshotCache.get(snapshotId);
+  if (cached && cached.expiresAt > Date.now() && cached.version === version) return cached.snapshot;
+  if (cached && cached.expiresAt <= Date.now()) snapshotCache.delete(snapshotId);
+  const inflight = snapshotInflight.get(snapshotId);
+  if (inflight && inflight.version === version) return inflight.promise;
+  const promise = (async () => {
+    const listed = await lsFiles(sid);
+    const selected = listed.filter(file => !filter || filter.test(file)).slice(0, limit);
+    const pairs = await Promise.all(selected.map(async file => {
+      try { return [file.path, await readFile(sid, file.path)]; }
+      catch (error) { return [file.path, `\n[Could not load ${file.path}: ${error.message}]`]; }
+    }));
+    const snapshot = { files: selected, contents: Object.fromEntries(pairs) };
+    if ((workspaceVersions.get(key) || 0) === version) {
+      snapshotCache.set(snapshotId, { version, snapshot, expiresAt: Date.now() + 45_000 });
+      while (snapshotCache.size > 6) snapshotCache.delete(snapshotCache.keys().next().value);
+    }
+    return snapshot;
+  })();
+  snapshotInflight.set(snapshotId, { version, promise });
+  try { return await promise; }
+  finally { if (snapshotInflight.get(snapshotId)?.promise === promise) snapshotInflight.delete(snapshotId); }
+}
+
 export async function lsFiles(sid, prefix = '') {
   const base = root(sid);
   const { blobs } = await list({ prefix: base + norm(prefix), limit: 1000 });
   return blobs.map(b => ({ path: b.pathname.slice(base.length), size: b.size, url: b.url }));
 }
 export const findFile = async (sid, p) => (await lsFiles(sid, p)).find(f => f.path === norm(p));
+
+async function readSnapshotFile(sid, p) {
+  const target = norm(p);
+  const snapshot = await getWorkspaceSnapshot(sid, { limit: 200 });
+  if (Object.prototype.hasOwnProperty.call(snapshot.contents, target)) return snapshot.contents[target];
+  return readFile(sid, target);
+}
 
 export async function readFile(sid, p) {
   const f = await findFile(sid, p);
@@ -28,11 +76,12 @@ export async function writeFile(sid, p, content) {
     access: 'public', addRandomSuffix: false, allowOverwrite: true,
     contentType: (TYPES[ext] || 'text/plain') + (TYPES[ext]?.startsWith('image') ? '' : '; charset=utf-8'), cacheControlMaxAge: 0,
   });
+  invalidateWorkspace(sid);
   return { path: norm(p), url: b.url, size: String(content).length };
 }
 export async function rmPath(sid, p) {
   const hits = (await lsFiles(sid, p)).filter(f => f.path === norm(p) || f.path.startsWith(norm(p) + '/'));
-  if (hits.length) await del(hits.map(h => h.url));
+  if (hits.length) { await del(hits.map(h => h.url)); invalidateWorkspace(sid); }
   return hits.length;
 }
 
@@ -42,8 +91,10 @@ const tok = s => (s.match(/"(?:\\.|[^"])*"|'[^']*'|\S+/g) || []).map(t => (/^["'
 export async function realShell(sid, cmd) {
   const dir = await fs.mkdtemp(join(tmpdir(), 'ws-')), before = {};
   try {
-    await Promise.all((await lsFiles(sid)).slice(0, 200).map(async f => {
-      const t = await readFile(sid, f.path), p = join(dir, f.path); before[f.path] = t;
+    const snapshot = await getWorkspaceSnapshot(sid, { limit: 200 });
+    await Promise.all(snapshot.files.map(async f => {
+      const t = snapshot.contents[f.path] ?? '';
+      const p = join(dir, f.path); before[f.path] = t;
       await fs.mkdir(dirname(p), { recursive: true }); await fs.writeFile(p, t);
     }));
     let out;
@@ -72,15 +123,15 @@ async function one(sid, line) {
     case 'pwd': o = '/'; break;
     case 'mkdir': case 'touch': for (const f of args) if (c === 'touch' && !(await findFile(sid, f))) await writeFile(sid, f, ''); break;
     case 'ls': o = (await lsFiles(sid, args[0] || '')).map(f => `${f.path}  (${f.size}b)`).join('\n') || '(empty)'; break;
-    case 'cat': o = (await Promise.all(args.map(f => readFile(sid, f)))).join(''); break;
+    case 'cat': o = (await Promise.all(args.map(f => readSnapshotFile(sid, f)))).join(''); break;
     case 'echo': o = a.join(' ') + '\n'; break;
     case 'printf': o = a.join(' '); break;
     case 'head': case 'tail': {
       const n = a.includes('-n') ? +a[a.indexOf('-n') + 1] : 10;
-      const l = (await readFile(sid, args[args.length - 1])).split('\n');
+      const l = (await readSnapshotFile(sid, args[args.length - 1])).split('\n');
       o = (c === 'head' ? l.slice(0, n) : l.slice(-n)).join('\n'); break;
     }
-    case 'wc': { const t = await readFile(sid, args[0]); o = `${t.split('\n').length} lines, ${t.split(/\s+/).filter(Boolean).length} words, ${t.length} chars`; break; }
+    case 'wc': { const t = await readSnapshotFile(sid, args[0]); o = `${t.split('\n').length} lines, ${t.split(/\s+/).filter(Boolean).length} words, ${t.length} chars`; break; }
     case 'rm': { const n = []; for (const f of args) n.push(await rmPath(sid, f)); o = `removed ${n.reduce((x, y) => x + y, 0)} file(s)`; break; }
     case 'cp': case 'mv': {
       const t = await readFile(sid, args[0]); await writeFile(sid, args[1], t);
@@ -89,7 +140,8 @@ async function one(sid, line) {
     case 'grep': {
       const re = new RegExp(args[0], a.includes('-i') ? 'i' : '');
       const files = args.length > 1 ? args.slice(1).map(f => ({ path: f })) : await lsFiles(sid);
-      for (const f of files) (await readFile(sid, f.path)).split('\n').forEach((l, i) => re.test(l) && (o += `${f.path}:${i + 1}:${l}\n`));
+      const snapshot = await getWorkspaceSnapshot(sid, { limit: 200 });
+      for (const f of files) (snapshot.contents[f.path] ?? await readFile(sid, f.path)).split('\n').forEach((l, i) => re.test(l) && (o += `${f.path}:${i + 1}:${l}\n`));
       o = o || '(no matches)'; break;
     }
     case 'help': o = 'ls cat echo printf head tail wc rm cp mv touch mkdir grep pwd  (supports > and >> with echo/cat)'; break;
