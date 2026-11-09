@@ -194,7 +194,23 @@ function ev(e,a){
  else if(e.t==='sub'){const p=a.parts.find(x=>x.id===e.id);if(p)(p.log=p.log||[]).push(e.line)}
  else if(e.t==='file'){a.parts.push({type:'file',path:e.path,url:e.url,title:e.title});refreshFiles()}
  else if(e.t==='via'){a.kind=e.model;const v=$('#via');v.textContent=(e.modelName||e.model)+' · '+e.via;v.classList.add('on')}
- else if(e.t==='done'){a.done=true;a.content=e.answer||a.parts.filter(p=>p.type==='text').map(p=>p.text).join('\n')}
+ else if(e.t==='done'){
+  a.done=true;
+  const streamed=a.parts.filter(p=>p.type==='text');
+  const answer=String(e.answer||streamed.map(p=>p.text).join('\n'));
+  if(answer){
+   if(!streamed.length)a.parts.push({type:'text',text:answer,live:false});
+   else{
+    const current=streamed.map(p=>p.text).join('\n').trim();
+    if(e.answer&&current!==String(e.answer).trim()){
+     const first=streamed[0];first.text=String(e.answer);first.live=false;
+     let kept=false;
+     a.parts=a.parts.filter(p=>{if(p.type!=='text')return true;if(!kept){kept=true;return true}return false});
+    }else streamed.forEach(p=>p.live=false);
+   }
+  }
+  a.content=answer;
+ }
  else if(e.t==='error')a.parts.push({type:'error',text:e.error});
 }
 async function send(text,resumeMessage=null){
