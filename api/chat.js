@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { lsFiles, readFile, writeFile, shell, saveJob, loadJob, getWorkspaceSnapshot } from './_lib.js';
 import { isProgressOnly, readToolCacheKey, findCachedRead, rememberRead, toolMutatesWorkspace } from './agent-guards.js';
 import { analyzeImages, validateImages } from './vision.js';
+import { mergeProviderToolCall, hasGoogleThoughtSignature, messagesForProvider, isRetryableProviderStatus } from './gemini-compat.js';
 
 const DAY = new Date().toDateString();
 const SYS = `You are Kedabra, an expert AI engineer and assistant at kedabra.ai, running in a persistent cloud workspace.
@@ -56,10 +57,10 @@ function candidates(modelId = 'reasoning') {
     if (option.provider === 'groq') {
       rotatedKeys.forEach((key, index) => {
         const keyIndex = groqKeys.indexOf(key) + 1;
-        list.push({ key, model: option.model, url: 'https://api.groq.com/openai/v1/chat/completions', name: `${option.model} · Groq key ${keyIndex}`, modelId: option.id });
+        list.push({ key, model: option.model, url: 'https://api.groq.com/openai/v1/chat/completions', name: `${option.model} · Groq key ${keyIndex}`, modelId: option.id, provider: 'groq' });
       });
     } else if (option.provider === 'google' && GOOGLE_KEY) {
-      list.push({ key: GOOGLE_KEY, model: option.model, url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', name: `${option.model} · Google`, modelId: option.id });
+      list.push({ key: GOOGLE_KEY, model: option.model, url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', name: `${option.model} · Google`, modelId: option.id, provider: 'google' });
     }
   }
   const healthy = list.filter(item => !(badUntil.get(item.key + ':' + item.model) > Date.now()));
@@ -95,8 +96,17 @@ async function readStream(response, onText) {
         const index = tool.index ?? 0;
         const call = (msg.tool_calls[index] ??= { id: tool.id || `call_${index}_${Date.now()}`, type: 'function', function: { name: '', arguments: '' } });
         if (tool.id) call.id = tool.id;
+        if (tool.type) call.type = tool.type;
         if (tool.function?.name) call.function.name += tool.function.name;
         if (tool.function?.arguments) call.function.arguments += tool.function.arguments;
+        // Gemini 3 returns its required thought signature as provider-specific
+        // metadata on the OpenAI-compatible tool_call. Preserve it verbatim.
+        mergeProviderToolCall(call, tool);
+      }
+      // Be tolerant of adapters that stream the Google metadata beside the
+      // tool_calls array instead of on the individual tool-call delta.
+      if (msg.tool_calls.length && delta.extra_content?.google?.thought_signature) {
+        mergeProviderToolCall(msg.tool_calls[0], { extra_content: delta.extra_content });
       }
     }
   }
@@ -116,6 +126,8 @@ async function llm(messages, tools, modelId, { deadline, send, dead, onText, max
     if (!available.length) {
       lastError = 'No usable API keys are configured. Add a Groq or Google key in Vercel environment variables.';
     } else {
+      let permanentError = null;
+      let retryableErrorSeen = false;
       for (const provider of available) {
         if (dead?.()) throw new CancelRun();
         if (Date.now() >= deadline) throw new PauseRun();
@@ -125,7 +137,7 @@ async function llm(messages, tools, modelId, { deadline, send, dead, onText, max
           const baseTokens = maxTokens || (tools?.length ? (provider.modelId === 'coding' ? 4_000 : 2_400) : 1_400);
           const body = {
             model: provider.model,
-            messages,
+            messages: messagesForProvider(messages, provider.provider),
             temperature: provider.modelId === 'coding' ? 0.2 : 0.45,
             // If the provider reports a length stop, the next attempt gets a
             // larger output allowance instead of silently accepting a fragment.
@@ -141,12 +153,20 @@ async function llm(messages, tools, modelId, { deadline, send, dead, onText, max
           if (!response.ok) {
             const errorText = await response.text();
             const status = response.status;
-            if ([401, 403, 404].includes(status)) badUntil.set(provider.key + ':' + provider.model, Date.now() + 10 * 60_000);
+            const error = new Error(`${provider.name} (${status}): ${errorText.slice(0, 500)}`);
+            error.status = status;
+            error.retryable = isRetryableProviderStatus(status);
+            if (!error.retryable) badUntil.set(provider.key + ':' + provider.model, Date.now() + 10 * 60_000);
             else if (status === 429) badUntil.set(provider.key + ':' + provider.model, Date.now() + 60_000);
             else if (status >= 500) badUntil.set(provider.key + ':' + provider.model, Date.now() + 30_000);
-            throw new Error(`${provider.name} (${status}): ${errorText.slice(0, 180)}`);
+            throw error;
           }
           const msg = await readStream(response, text => onText?.(text));
+          if (provider.provider === 'google' && /^gemini-3(?:\.|-)/i.test(provider.model) && msg.tool_calls.length && !hasGoogleThoughtSignature(msg.tool_calls[0])) {
+            const error = new Error(`${provider.name} returned a function call without extra_content.google.thought_signature. The tool call was not executed; update/redeploy Kedabra's Gemini compatibility fix or check the provider response format.`);
+            error.retryable = false;
+            throw error;
+          }
           if (msg.finish_reason === 'length') {
             const error = new Error(`${provider.name} stopped at the output-token limit; retrying with a larger allowance.`);
             error.truncated = true;
@@ -157,9 +177,19 @@ async function llm(messages, tools, modelId, { deadline, send, dead, onText, max
           return { msg, via: provider.name, modelId: provider.modelId };
         } catch (error) {
           lastError = error?.name === 'AbortError' ? `${provider.name} timed out after ${PROVIDER_TIMEOUT_MS / 1000}s.` : String(error?.message || error);
+          if (error?.retryable === false) {
+            permanentError = error;
+            badUntil.set(provider.key + ':' + provider.model, Date.now() + 10 * 60_000);
+          } else {
+            retryableErrorSeen = true;
+          }
           if (onText) send?.({ t: 'reset_delta' });
         } finally { clearTimeout(timeout); }
       }
+      // A malformed request (especially Gemini's missing-signature 400) cannot
+      // be repaired by sending the identical payload again. Stop the retry
+      // loop once every available provider has returned a permanent error.
+      if (permanentError && !retryableErrorSeen) throw permanentError;
     }
     cycle++;
     const wait = Math.min(backoff, 15_000);
