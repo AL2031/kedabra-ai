@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 // Stub provider credentials before importing the route: no real API calls are made.
 process.env.GROQ_API_KEY_1 = 'test-groq-key';
 process.env.GOOGLE_API_KEY = 'test-google-key';
+// Simulate an old deployment setting: the route must redirect this to the current model.
+process.env.GOOGLE_VISION_MODEL = 'gemini-2.5-pro';
 
 const realFetch = globalThis.fetch;
 const { default: handler, analyzeImages, validateImages } = await import('../api/vision.js?vision-tests');
@@ -29,6 +31,7 @@ test('GET reports configured vision model providers without revealing keys', asy
   assert.equal(response.statusCode, 200);
   assert.equal(response.payload.qwen.available, true);
   assert.equal(response.payload.gemini.available, true);
+  assert.equal(response.payload.gemini.model, 'gemini-3.6-flash');
   assert.equal(JSON.stringify(response.payload).includes('test-groq-key'), false);
 });
 

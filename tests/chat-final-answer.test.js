@@ -40,3 +40,14 @@ test('uses the backend final answer if it differs from the streamed preview', ()
   assert.equal(visible[0].live, false);
   assert.equal(message.content, 'The complete final answer.');
 });
+
+test('chat rendering groups tool events and hides internal summaries from the transcript', () => {
+  assert.match(html, /function activityHTML\(items\)/);
+  assert.match(html, /const parts=m\.parts\|\|\[\],tools=parts\.filter/);
+  assert.match(html, /if\(p\.type==='summary'\)continue/);
+});
+
+test('browser sends only a bounded recent conversation window to the API', () => {
+  assert.match(html, /cur\.msgs\.slice\(-15,-1\)/);
+  assert.match(html, /i===recent\.length-1&&m\.role==='user'\?20_000:1_200/);
+});

@@ -2,12 +2,29 @@
 
 export function isProgressOnly(value) {
   const text = String(value || '').trim();
-  if (!text || text.length > 420) return false;
-  if (/```|\b(?:completed|created|updated|fixed|tested|results?|here(?:'s| is)|the answer is)\b/i.test(text)) return false;
+  if (!text) return true;
+  if (/```/.test(text)) return false;
 
-  const announcesIntent = /^(?:(?:okay|alright|sure)[,.! ]*)?(?:i(?:'|’)ll|i will|let me|i(?:'|’)m going to|i am going to|first[,. ]+(?:i(?:'|’)ll|i will|let me)|to start[,. ]+(?:i(?:'|’)ll|i will|let me))\b/i.test(text);
-  const describesPreparation = /\b(?:start|begin|inspect|review|check|look|examine|analy[sz]e|investigate|explore|open|read|trace|take a look)\b/i.test(text);
-  return announcesIntent && describesPreparation;
+  // The final-answer path must reject promises to continue researching, not just
+  // the narrower "I'll inspect..." wording. This was allowing progress updates
+  // such as "I'll retry the web research now" to be shown as completed answers.
+  const announcesIntent = /^(?:(?:okay|alright|sure|great)[,.! ]*)?(?:i(?:'|’)ll|i will|let me|i(?:'|’)m going to|i am going to|first[,. ]+(?:i(?:'|’)ll|i will|let me)|to start[,. ]+(?:i(?:'|’)ll|i will|let me))\b/i.test(text);
+  const describesPreparation = /\b(?:start|begin|inspect|review|check|look|examine|analy[sz]e|investigate|explore|open|read|trace|take a look|search|research|retry|fetch|compare|gather|verify|continue|work on|dig into)\b/i.test(text);
+  if (announcesIntent && describesPreparation) return true;
+
+  // Common non-first-person progress/opening lines should not be accepted as
+  // a final answer either.
+  if (/^(?:i(?:'|’)m|i am)\s+(?:currently\s+)?(?:searching|researching|checking|looking|fetching|gathering|working|continuing|retrying)\b/i.test(text)) return true;
+  if (/^(?:here(?:'s| is) what i(?:'|’)ll do|next i(?:'|’)ll|now i(?:'|’)ll|let(?:'|’)s start by)\b/i.test(text)) return true;
+
+  const danglingResearch = text.length > 55 && text.length < 240 && !/[.!?]\s*$/.test(text)
+    && /\b(?:news|announcements?|updates?)\b/i.test(text)
+    && !/\b(?:is|are|was|were|announced|announces|released|launches|says|said|includes?|reports?|reported|reveals?|according)\b/i.test(text);
+  if (danglingResearch) return true;
+
+  // Reject a dangling heading or an obviously truncated one-line fragment.
+  if (text.length < 100 && /(?:\b(?:this week|latest|news|announcements?)\s*[:—-]?\s*)$/i.test(text)) return true;
+  return false;
 }
 
 export function readToolCacheKey(name, args, revision = 0) {

@@ -7,11 +7,10 @@ import { analyzeImages, validateImages } from './vision.js';
 const DAY = new Date().toDateString();
 const SYS = `You are Kedabra, an expert AI engineer and assistant at kedabra.ai, running in a persistent cloud workspace.
 Tools: web_search, fetch_url, run_python, run_javascript, create_file, write_files, read_file, edit_file, list_files, terminal, present_file, spawn_subagents.
-Execution discipline: inspect the workspace once, then inspect only files relevant to the assigned task. Never read the same file or list the workspace repeatedly unless the file changed. A repeated read of the same path returns a cached result. Do not issue speculative or unrelated commands. Prefer one focused batch of file reads, then implement the task, then run focused tests and verify changed files. Do not narrate what you plan to do; actually do it. A progress announcement is not a deliverable. Preserve existing features unless asked to remove them. Never claim a test ran unless it did. Be concise and use markdown. Today is ${DAY}.`;
+Execution discipline: inspect the workspace once, then inspect only files relevant to the assigned task. Never read the same file or list the workspace repeatedly unless the file changed. A repeated read of the same path returns a cached result. Do not issue speculative or unrelated commands. Prefer one focused batch of file reads, then implement the task, then run focused tests and verify changed files. Do not narrate what you plan to do; actually do it. A progress announcement is not a deliverable. Preserve existing features unless asked to remove them. Never claim a test ran unless it did. Be concise and use markdown. For web research, use at most 2 distinct searches and 3 useful source pages unless the user explicitly asks for exhaustive research; prioritize primary/authoritative sources, avoid duplicate domains, and stop once evidence is sufficient. Cite researched claims with markdown links to the source URLs and include publication dates when available. Return the actual findings, not a plan to search. Today is ${DAY}.`;
 const PLANNER_SYS = `You are Kedabra's task planner and model router. Convert the user's request into an executable plan. Return ONLY valid JSON, no markdown.
 Schema: {"objective":"...","reason":"...","steps":[{"id":"s1","title":"short label","task":"detailed self-contained instructions and success criteria","model":"reasoning|coding|gemini"}]}
 Use 1 step for a simple direct answer, 1-3 steps for normal projects, and at most 5 for genuinely large multi-part work. Do not split inspection, implementation and verification into separate steps when one focused step can do them. Avoid steps that cause later models to re-inspect files already inspected. Make steps sequential only when later steps depend on earlier output. Prefer parallel subtasks only when truly independent and use spawn_subagents inside a step when useful. Select the lowest-cost model that can do each step reliably: reasoning for planning, explanation, synthesis and general tasks; coding for code creation, debugging, refactoring and tests; gemini only when a distinct model is a good fit and is listed as available. Model IDs must exactly match the available catalog. Do not invent models or use a model that is not listed. Keep each step concrete and independently actionable. Do not create unnecessary steps.`;
-const CONTEXT_SYS = `You are Kedabra's conversation-memory summarizer. Compress the prior chat into a compact project memory for the next request. Preserve the user's durable instructions and preferences, active project facts, important decisions, relevant file names and interfaces, unresolved tasks and constraints. Prioritize recent messages over old ones. Exclude greetings, obsolete details and irrelevant tangents. Do not invent facts or imply work was completed unless the chat confirms it. Return only concise plain text, maximum 3,500 characters.`;
 const SUMMARY_SYS = `You are Kedabra's execution-context summarizer. Update the running project memory using the previous summary and the latest completed step. Return ONLY the updated summary as plain text. Preserve all still-relevant user requirements, decisions, constraints, files created/changed and their roles, interfaces, tests and outcomes, unresolved issues, and the exact next action. Remove stale detail and repetition. Do not claim success unless the step result or tool output confirms it. Keep the result compact (aim for 1,500-3,000 characters; never exceed 5,000). This summary will be the ONLY prior-task context shown to the next execution step.`;
 const SUBSYS = `You are a focused Kedabra sub-agent. Do ONLY your assigned task using the tools, write requested files to exact paths, and reply with a short summary of changes, file paths, tests, and anything the lead must know.`;
 
@@ -24,7 +23,7 @@ const GOOGLE_KEY = process.env.GOOGLE_API_KEY?.trim();
 const MODELS = {
   reasoning: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
   coding: process.env.QWEN_MODEL || 'qwen/qwen3.8-27b',
-  gemini: process.env.GOOGLE_MODEL || 'gemini-2.5-flash',
+  gemini: (() => { const configured = process.env.GOOGLE_MODEL?.trim(); return !configured || /^gemini-2\.5-(?:flash|pro)(?:-|$)/.test(configured) ? 'gemini-3.6-flash' : configured; })(),
 };
 const MODEL_CATALOG = {
   reasoning: { id: 'reasoning', model: MODELS.reasoning, provider: 'groq', purpose: 'planning, reasoning, general work and final synthesis' },
@@ -34,10 +33,13 @@ const MODEL_CATALOG = {
 const badUntil = new Map();
 let roundRobin = 0;
 const INVOCATION_BUDGET_MS = 180_000;
-const PROVIDER_TIMEOUT_MS = 14_000;
-const MAX_AGENT_ROUNDS = 12;
-const MAX_TOOL_CALLS_PER_STEP = 24;
-const MAX_TOOL_OUTPUT = 8_000;
+// Large reasoning models need more than 14s to finish a streamed response.
+const PROVIDER_TIMEOUT_MS = 35_000;
+const MAX_AGENT_ROUNDS = 8;
+const MAX_TOOL_CALLS_PER_STEP = 12;
+const MAX_TOOL_OUTPUT = 5_000;
+const MAX_WEB_SEARCHES = 3;
+const MAX_PAGE_FETCHES = 4;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const CODE_RE = /```|\b(code|coding|programs?|programming|script|scripts|function|bug|debug|fix|error|exception|stack ?trace|compile|refactor|implement|algorithm|regex|api|endpoint|sdk|html|css|javascript|typescript|python|java|rust|golang|sql|database|react|vue|svelte|next\.js|node|npm|pip|git|github|repo|deploy|docker|website|web ?site|web ?page|web ?app|game|component|frontend|backend|full[- ]?stack|bot|extension|plugin|framework|terminal|shell|bash|cli|json|yaml|xml|lua|roblox|three\.js|build me)\b|c\+\+|c#|\.(py|js|ts|html|css|json|jsx|tsx)\b/i;
 
@@ -65,7 +67,7 @@ function candidates(modelId = 'reasoning') {
 }
 
 async function readStream(response, onText) {
-  const msg = { content: '', tool_calls: [] };
+  const msg = { content: '', tool_calls: [], finish_reason: '' };
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '', raw = '', shown = 0, sawDone = false;
@@ -80,7 +82,9 @@ async function readStream(response, onText) {
       const payload = line.slice(5).trim();
       if (payload === '[DONE]') { sawDone = true; continue; }
       let data; try { data = JSON.parse(payload); } catch { continue; }
-      const delta = data.choices?.[0]?.delta;
+      const choice = data.choices?.[0];
+      if (choice?.finish_reason) msg.finish_reason = choice.finish_reason;
+      const delta = choice?.delta;
       if (!delta) continue;
       if (delta.content) {
         raw += delta.content;
@@ -103,7 +107,7 @@ async function readStream(response, onText) {
   return msg;
 }
 
-async function llm(messages, tools, modelId, { deadline, send, dead, onText } = {}) {
+async function llm(messages, tools, modelId, { deadline, send, dead, onText, maxTokens } = {}) {
   let cycle = 0, backoff = 1_500, lastError = 'No API keys are configured.';
   for (;;) {
     if (dead?.()) throw new CancelRun();
@@ -118,10 +122,14 @@ async function llm(messages, tools, modelId, { deadline, send, dead, onText } = 
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
         try {
+          const baseTokens = maxTokens || (tools?.length ? (provider.modelId === 'coding' ? 4_000 : 2_400) : 1_400);
           const body = {
             model: provider.model,
             messages,
             temperature: provider.modelId === 'coding' ? 0.2 : 0.45,
+            // If the provider reports a length stop, the next attempt gets a
+            // larger output allowance instead of silently accepting a fragment.
+            max_tokens: Math.min(6_000, Math.round(baseTokens * Math.pow(1.6, Math.min(cycle, 2)))),
             stream: true,
             ...(tools?.length ? { tools, tool_choice: 'auto' } : {}),
           };
@@ -139,6 +147,11 @@ async function llm(messages, tools, modelId, { deadline, send, dead, onText } = 
             throw new Error(`${provider.name} (${status}): ${errorText.slice(0, 180)}`);
           }
           const msg = await readStream(response, text => onText?.(text));
+          if (msg.finish_reason === 'length') {
+            const error = new Error(`${provider.name} stopped at the output-token limit; retrying with a larger allowance.`);
+            error.truncated = true;
+            throw error;
+          }
           if (!msg.content && !msg.tool_calls.length) throw new Error(`${provider.name} returned an empty response.`);
           if (cycle > 0) send?.({ t: 'retry_clear' });
           return { msg, via: provider.name, modelId: provider.modelId };
@@ -174,26 +187,49 @@ function fallbackPlan(task) {
 }
 
 async function summarizeHistory(job, deadline, send, dead) {
-  const history = (job.history || []).map(message => `${message.role}: ${String(message.content || '').slice(0, 2_500)}`).join('\n\n').slice(-10_000);
-  const prompt = `PREVIOUS CHAT (oldest first; recent messages are most important):\n${history || '(none)'}\n\nCreate concise memory that will help answer the next request. Do not answer the current request yet.`;
-  const response = await llm([{ role: 'system', content: CONTEXT_SYS }, { role: 'user', content: prompt }], [], 'reasoning', { deadline, send, dead });
-  return response.msg.content.trim().slice(0, 3_500);
+  // Conversation context is already available as text. Deterministic trimming
+  // avoids spending a full model call just to summarize a few recent turns.
+  const history = (job.history || []).slice(-6).map(message => {
+    const role = message.role === 'assistant' ? 'Assistant' : 'User';
+    return `${role}: ${String(message.content || '').replace(/\s+/g, ' ').slice(0, 1_000)}`;
+  }).join('\n');
+  return history.slice(-6_000);
+}
+
+function directPlan(task, preferredModelId = 'auto', webSearch = false) {
+  if (CODE_RE.test(task)) return null;
+  const complex = /\b(?:build|create|implement|design|redesign|fix|debug|refactor|update|modify|integrate|automate|multi[- ]step|step[- ]by[- ]step|compare|comprehensive|exhaustive|research report|proposal|business plan|roadmap)\b/i.test(task) || task.length > 650;
+  if (complex) return null;
+  const model = MODEL_CATALOG[preferredModelId] ? preferredModelId : 'reasoning';
+  const webInstruction = webSearch ? '\n\nThe user enabled web search. Use the web_search tool to verify current details and cite the sources in your answer.' : '';
+  return {
+    objective: task,
+    reason: 'A single focused pass is sufficient; planning would add overhead without improving the result.',
+    steps: [{ id: 's1', title: 'Answer the request', task: `${task}${webInstruction}\n\nComplete the request directly. For current or niche facts, use a small number of reliable web searches and verify only the most useful sources. Do not narrate intentions. End with a complete, self-contained answer.`, model, modelName: MODEL_CATALOG[model].model }],
+  };
 }
 
 async function makePlan(job, deadline, send, dead) {
+  const direct = directPlan(job.request, job.selectedModel || 'auto', Boolean(job.webSearch));
+  if (direct) return direct;
   const catalog = Object.values(MODEL_CATALOG).map(m => ({ id: m.id, model: m.model, purpose: m.purpose }));
-  const prompt = `AVAILABLE MODELS:\n${JSON.stringify(catalog)}\n\nMODEL-SUMMARIZED CONVERSATION CONTEXT:\n${job.summary || '(none)'}\n\nVISUAL REFERENCES (already inspected by the multimodal model; treat these as source material):\n${job.visualContext || '(No images attached.)'}\n\nCURRENT USER REQUEST:\n${job.request}\n\nCreate the execution plan. Choose an exact model ID for every step. Keep related inspection, implementation and testing in the same step where practical. Include only the files and tools needed. Do not create multiple steps that would reread the same workspace files. If visual references are present, make sure implementation steps explicitly use their relevant details. Do not ask the coding model to infer details that are already established in the visual analysis.`;
-  const response = await llm([{ role: 'system', content: PLANNER_SYS }, { role: 'user', content: prompt }], [], 'reasoning', { deadline, send, dead });
+  const preference = MODEL_CATALOG[job.selectedModel] ? `\n\nUSER MODEL SELECTION: The user explicitly chose ${job.selectedModel} (${MODEL_CATALOG[job.selectedModel].model}). Use this model for every execution step; do not switch models unless it is unavailable.` : '';
+  const webInstruction = job.webSearch ? '\n\nWEB SEARCH MODE: The user explicitly enabled web search. Use web_search to gather current, relevant sources and cite the source URLs in the final answer.' : '';
+  const prompt = `AVAILABLE MODELS:\n${JSON.stringify(catalog)}\n\nMODEL-SUMMARIZED CONVERSATION CONTEXT:\n${job.summary || '(none)'}\n\nVISUAL REFERENCES (already inspected by the multimodal model; treat these as source material):\n${job.visualContext || '(No images attached.)'}\n\nCURRENT USER REQUEST:\n${job.request}${preference}${webInstruction}\n\nCreate the execution plan. Choose an exact model ID for every step. Keep related inspection, implementation and testing in the same step where practical. Include only the files and tools needed. Do not create multiple steps that would reread the same workspace files. If visual references are present, make sure implementation steps explicitly use their relevant details. Do not ask the coding model to infer details that are already established in the visual analysis.`;
+  const response = await llm([{ role: 'system', content: PLANNER_SYS }, { role: 'user', content: prompt }], [], 'reasoning', { deadline, send, dead, maxTokens: 900 });
   const data = parseJsonObject(response.msg.content);
   const allowed = new Set(Object.keys(MODEL_CATALOG));
   const steps = Array.isArray(data?.steps) ? data.steps.slice(0, 6).map((step, index) => ({
     id: String(step.id || `s${index + 1}`).slice(0, 24),
     title: String(step.title || `Step ${index + 1}`).slice(0, 90),
     task: String(step.task || '').slice(0, 5000),
-    model: allowed.has(step.model) ? step.model : 'reasoning',
-    modelName: MODEL_CATALOG[allowed.has(step.model) ? step.model : 'reasoning'].model,
+    model: MODEL_CATALOG[job.selectedModel] ? job.selectedModel : (allowed.has(step.model) ? step.model : 'reasoning'),
+    modelName: MODEL_CATALOG[job.selectedModel]?.model || MODEL_CATALOG[allowed.has(step.model) ? step.model : 'reasoning'].model,
   })).filter(step => step.task) : [];
-  return steps.length ? { objective: String(data.objective || job.request).slice(0, 1000), reason: String(data.reason || '').slice(0, 800), steps } : fallbackPlan(job.request);
+  if (steps.length) return { objective: String(data.objective || job.request).slice(0, 1000), reason: String(data.reason || '').slice(0, 800), steps };
+  const fallback = fallbackPlan(job.request);
+  if (MODEL_CATALOG[job.selectedModel]) fallback.steps.forEach(step => { step.model = job.selectedModel; step.modelName = MODEL_CATALOG[job.selectedModel].model; });
+  return fallback;
 }
 
 async function runPy(code, files) {
@@ -220,7 +256,7 @@ const T = (name, description, props = {}, required = Object.keys(props)) => ({
   } },
 });
 const TOOLS = [
-  T('web_search', 'Search the web. Returns titles, URLs and snippets.', { query: 'search query' }),
+  T('web_search', 'Search the web. Returns up to five titles, URLs and short snippets. Reuse search results and avoid repeated queries.', { query: 'search query' }),
   T('fetch_url', 'Fetch a web page and return its text.', { url: 'full https URL' }),
   T('run_javascript', 'Run synchronous JavaScript (3s limit). Use console.log for output; last expression is returned.', { code: 'JavaScript code' }),
   T('create_file', 'Create or overwrite a file in the workspace.', { path: 'file path', content: 'full file content' }),
@@ -240,16 +276,21 @@ async function search(query) {
   if (process.env.TAVILY_API_KEY) {
     const response = await fetch('https://api.tavily.com/search', {
       method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.TAVILY_API_KEY },
-      body: JSON.stringify({ query, max_results: 6 }), signal: AbortSignal.timeout(12_000),
+      body: JSON.stringify({ query, max_results: 5 }), signal: AbortSignal.timeout(12_000),
     });
     if (!response.ok) throw new Error(`Search failed (${response.status})`);
-    return (await response.json()).results?.map(item => ({ title: item.title, url: item.url, snippet: String(item.content || '').slice(0, 300) })) || [];
+    const seen = new Set();
+    return ((await response.json()).results || []).filter(item => {
+      const key = String(item.url || '').split('#')[0];
+      if (!key || seen.has(key)) return false;
+      seen.add(key); return true;
+    }).slice(0, 5).map(item => ({ title: item.title, url: item.url, snippet: String(item.content || '').slice(0, 220) }));
   }
   const response = await fetch('https://html.duckduckgo.com/html/?q=' + encodeURIComponent(query), { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Kedabra/1.0)' }, signal: AbortSignal.timeout(12_000) });
   const html = await response.text();
   const results = [], regex = /class="result__a" href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
   let match;
-  while ((match = regex.exec(html)) && results.length < 8) {
+  while ((match = regex.exec(html)) && results.length < 5) {
     const target = match[1].match(/uddg=([^&]+)/);
     results.push({ title: strip(match[2]), url: target ? decodeURIComponent(target[1]) : match[1], snippet: strip(match[3]) });
   }
@@ -266,11 +307,33 @@ function runJS(code) {
 
 async function runTool(name, args, { sid, send, tid, job, deadline, dead, modelId }) {
   switch (name) {
-    case 'web_search': return search(args.query);
+    case 'web_search': {
+      const query = String(args.query || '').trim().slice(0, 500);
+      const key = query.toLowerCase().replace(/\s+/g, ' ');
+      job.webSearchCache ||= [];
+      const cached = job.webSearchCache.find(item => item.key === key);
+      if (cached) return { cached: true, results: cached.results };
+      if ((job.webSearchCount || 0) >= MAX_WEB_SEARCHES) return { error: `Research budget reached (${MAX_WEB_SEARCHES} searches). Use the evidence already collected and write the answer.` };
+      job.webSearchCount = (job.webSearchCount || 0) + 1;
+      const results = await search(query);
+      job.webSearchCache.push({ key, results });
+      return results;
+    }
     case 'fetch_url': {
-      const response = await fetch(args.url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Kedabra/1.0)' }, signal: AbortSignal.timeout(10_000) });
+      let parsed;
+      try { parsed = new URL(String(args.url || '')); } catch { return { error: 'A valid source URL is required.' }; }
+      if (parsed.protocol !== 'https:') return { error: 'Only HTTPS source URLs are supported.' };
+      const url = parsed.toString().split('#')[0];
+      job.webFetchCache ||= [];
+      const cached = job.webFetchCache.find(item => item.url === url);
+      if (cached) return { cached: true, url, content: cached.content };
+      if ((job.webFetchCount || 0) >= MAX_PAGE_FETCHES) return { error: `Source-reading budget reached (${MAX_PAGE_FETCHES} pages). Use the evidence already collected and write the answer.` };
+      job.webFetchCount = (job.webFetchCount || 0) + 1;
+      const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Kedabra/1.0)' }, signal: AbortSignal.timeout(10_000) });
       if (!response.ok) return { error: `Fetch failed (${response.status})` };
-      return strip(await response.text()).slice(0, 8_000);
+      const content = strip(await response.text()).slice(0, 4_500);
+      job.webFetchCache.push({ url, content });
+      return content;
     }
     case 'run_javascript': return runJS(args.code);
     case 'create_file': return writeFile(sid, args.path, args.content);
@@ -325,12 +388,12 @@ async function compactStepConversation(conversation, { deadline, send, dead, mod
   const transcript = conversation.slice(2).map(message => {
     if (message.role === 'assistant' && message.tool_calls?.length) return `assistant tool calls: ${message.tool_calls.map(call => `${call.function.name}(${String(call.function.arguments || '').slice(0, 350)})`).join('; ')}`;
     return `${message.role}: ${String(message.content || '').slice(0, 1_200)}`;
-  }).join('\n\n').slice(-13_000);
+  }).join('\n\n').slice(-7_000);
   const compact = await llm([
-    { role: 'system', content: 'Summarize the current step execution so the same model can continue with minimal context. Preserve completed actions, file paths, important results, test outcomes, errors and next actions. Return plain text under 2,500 characters.' },
+    { role: 'system', content: 'Summarize the current step execution so the same model can continue with minimal context. Preserve completed actions, file paths, important results, test outcomes, errors and next actions. Return plain text under 1,800 characters.' },
     { role: 'user', content: transcript },
-  ], [], 'reasoning', { deadline, send, dead });
-  conversation.splice(2, conversation.length - 2, { role: 'assistant', content: `COMPACT CURRENT-STEP MEMORY:\n${compact.msg.content.slice(0, 2_500)}` });
+  ], [], 'reasoning', { deadline, send, dead, maxTokens: 800 });
+  conversation.splice(2, conversation.length - 2, { role: 'assistant', content: `COMPACT CURRENT-STEP MEMORY:\n${compact.msg.content.slice(0, 1_800)}` });
 }
 
 async function agentLoop(conversation, options) {
@@ -365,8 +428,9 @@ async function agentLoop(conversation, options) {
             content: 'That was only a progress statement, not the requested result. Continue the assigned task now. Use the available tools to perform the actual work, then return a concrete result. Do not repeat an intention or announce what you will do. Do not inspect files again if their contents are already in the conversation.',
           });
           if (progressOnlyCount >= 2) {
-            const alternate = activeModel === 'coding' ? 'reasoning' : 'coding';
-            if (MODEL_CATALOG[alternate] && activeModel !== alternate) {
+            const preferredAlternates = activeModel === 'coding' ? ['reasoning', 'gemini'] : activeModel === 'reasoning' ? ['gemini', 'coding'] : ['reasoning', 'coding'];
+            const alternate = preferredAlternates.find(id => MODEL_CATALOG[id] && id !== activeModel);
+            if (alternate) {
               activeModel = alternate;
               if (!nested) send({ t: 'agent_fallback', model: MODEL_CATALOG[alternate].model, detail: 'Switching models after repeated progress-only responses.' });
             }
@@ -452,7 +516,7 @@ async function summarizeStep(job, deadline, send, dead) {
   const readPaths = [...new Set((job.stepActions || []).filter(action => action.tool === 'read_file').map(action => { try { return JSON.parse(action.input).path; } catch { return ''; } }).filter(Boolean))];
   const changedPaths = [...new Set((job.stepActions || []).filter(action => ['create_file', 'edit_file', 'write_files', 'terminal', 'run_python'].includes(action.tool)).map(action => action.input))];
   const payload = `PREVIOUS RUNNING SUMMARY:\n${job.summary || '(none)'}\n\nVISUAL REFERENCE ANALYSIS:\n${job.visualContext || '(none)'}\n\nCOMPLETED STEP:\n${step.title}\nInstructions: ${step.task}\nSelected model: ${step.model}\n\nSTEP RESULT:\n${job.stepResult || '(no final text)'}\n\nFILES READ IN THIS STEP (avoid rereading unless changed):\n${readPaths.join('\n') || '(none)'}\n\nWORKSPACE-MUTATING TOOL CALLS:\n${changedPaths.join('\n') || '(none)'}\n\nTOOLS AND OBSERVED RESULTS:\n${actions || '(no tools used)'}\n\nCURRENT WORKSPACE FILES:\n${files || '(empty)'}`;
-  const response = await llm([{ role: 'system', content: SUMMARY_SYS }, { role: 'user', content: payload }], [], 'reasoning', { deadline, send, dead });
+  const response = await llm([{ role: 'system', content: SUMMARY_SYS }, { role: 'user', content: payload.slice(-8_000) }], [], 'reasoning', { deadline, send, dead, maxTokens: 1_000 });
   return response.msg.content.trim().slice(0, 5_000) || `${job.summary}\nCompleted ${step.title}: ${job.stepResult}`.slice(-5_000);
 }
 
@@ -476,7 +540,7 @@ Write the final response to the user. Clearly state what was completed, key file
       { role: 'system', content: system },
       { role: 'user', content: prompt + (attempt ? '\n\nYour previous answer was only a progress statement. Write the actual final status now, using only the completed results above.' : '') },
     ], [], 'reasoning', {
-      deadline, send, dead,
+      deadline, send, dead, maxTokens: 1_300,
       onText: text => send({ t: 'delta', text }),
     });
     const answer = String(response.msg.content || '').trim();
@@ -484,8 +548,10 @@ Write the final response to the user. Clearly state what was completed, key file
   }
 
   send({ t: 'reset_all_text' });
-  const lastStep = job.stepResult ? `\n\nLast step report: ${String(job.stepResult).slice(0, 1_000)}` : '';
-  return `Kedabra could not produce a reliable final summary. The task has not been confirmed as complete.\n\nSaved project context:\n${String(job.summary || 'No execution summary was saved.').slice(0, 3_500)}${lastStep}`;
+  const completed = (job.completedSteps || []).map((step, index) => `${index + 1}. ${step.title}: ${String(step.result || '').slice(0, 650)}`).join('\n\n');
+  const latest = job.stepResult ? String(job.stepResult).slice(0, 900) : '';
+  const evidence = completed || latest || String(job.summary || '').slice(-1_800);
+  return `The work was checkpointed, but Kedabra could not produce a reliable final summary. The task should be treated as incomplete until the status below is reviewed.\n\n${evidence || 'No completed step result was saved.'}`;
 }
 
 function sendStatus(send, status, detail = '') { send({ t: 'status', status, detail }); }
@@ -509,6 +575,11 @@ async function inspectImagesWithRetries(request, images, { deadline, send, dead 
 }
 
 export default async function handler(req, res) {
+  if (req.method === 'GET') return res.status(200).json({ models: {
+    reasoning: { available: groqKeys.length > 0, model: MODELS.reasoning, provider: 'Groq' },
+    coding: { available: groqKeys.length > 0, model: MODELS.coding, provider: 'Groq' },
+    gemini: { available: Boolean(GOOGLE_KEY), model: MODELS.gemini, provider: 'Google' },
+  } });
   if (req.method !== 'POST') return res.status(405).end();
   const body = req.body || {};
   const sid = String(body.sid || 'anon').slice(0, 100);
@@ -536,11 +607,14 @@ export default async function handler(req, res) {
       const lastUser = lastUserIndex >= 0 ? messages[lastUserIndex] : null;
       incomingImages = validateImages(body.images || lastUser?.attachments || []);
       const rawRequest = lastUser ? String(lastUser.content || '') : String(body.request || '');
+      const requestedModel = String(body.modelId || 'auto');
+      const modelAvailable = requestedModel === 'auto' || (requestedModel === 'gemini' ? Boolean(GOOGLE_KEY) : ['reasoning', 'coding'].includes(requestedModel) && groqKeys.length > 0);
+      if (!modelAvailable) throw new Error(`The selected model (${requestedModel}) is not configured. Check the provider API key in Vercel environment variables.`);
       const requestText = rawRequest.trim() || (incomingImages.length ? 'Inspect the attached visual references and use them to complete the task.' : '');
       if (!requestText.trim()) throw new Error('No user request was supplied.');
       const history = messages.slice(0, lastUserIndex).slice(-10).map(message => ({ role: message.role === 'assistant' ? 'assistant' : 'user', content: String(message.content || '').slice(0, 2_500) }));
       job = {
-        sid, jobId, request: requestText.slice(0, 20_000), history,
+        sid, jobId, request: requestText.slice(0, 20_000), history, selectedModel: requestedModel, webSearch: Boolean(body.webSearch),
         phase: incomingImages.length ? 'vision' : (history.length ? 'context' : 'planning'), plan: null, stepIndex: 0, summary: '',
         visualContext: '', visualModel: '', visualImageCount: incomingImages.length, visualFiles: incomingImages.map(image => image.name),
         stepConversation: null, stepResult: '', stepActions: [], stepToolCalls: 0, stepReadCache: [], workspaceRevision: 0, completedSteps: [], status: 'running', createdAt: Date.now(), updatedAt: Date.now(),
@@ -584,7 +658,7 @@ export default async function handler(req, res) {
       }
 
       if (job.phase === 'planning') {
-        sendStatus(send, 'Planning task', 'Choosing the model and splitting the request into executable steps.');
+        sendStatus(send, directPlan(job.request) ? 'Starting focused response' : 'Planning task');
         job.plan = await makePlan(job, deadline, send, () => gone);
         job.phase = 'executing';
         await checkpoint(job);
@@ -600,7 +674,7 @@ export default async function handler(req, res) {
         if (!job.stepConversation) {
           const context = String(job.summary || '(No prior execution context.)').slice(-7_000);
           job.stepConversation = [
-            { role: 'system', content: SYS + '\n\nIMPORTANT CONTEXT RULE: Use only the compact project memory below for prior work. Do not expect the full chat or earlier tool transcript. Update files based on the actual workspace state.\n\nCOMPACT PROJECT MEMORY:\n' + context + '\n\nVISUAL REFERENCE ANALYSIS (use these as the visual source of truth; images were inspected before planning):\n' + String(job.visualContext || '(No visual references attached.)').slice(0, 8_000) },
+            { role: 'system', content: SYS + (job.webSearch ? '\n\nThe user enabled web search for this request. Use web_search for relevant current facts and provide direct source links in the final response.' : '') + '\n\nIMPORTANT CONTEXT RULE: Use only the compact project memory below for prior work. Do not expect the full chat or earlier tool transcript. Update files based on the actual workspace state.\n\nCOMPACT PROJECT MEMORY:\n' + context + '\n\nVISUAL REFERENCE ANALYSIS (use these as the visual source of truth; images were inspected before planning):\n' + String(job.visualContext || '(No visual references attached.)').slice(0, 8_000) },
             { role: 'user', content: `OVERALL OBJECTIVE:\n${job.plan.objective}\n\nCURRENT STEP (${job.stepIndex + 1}/${job.plan.steps.length}): ${step.title}\n${step.task}\n\nComplete this step, use tools as needed, verify your work, and report concrete results.` },
           ];
           job.stepActions = [];
@@ -611,7 +685,10 @@ export default async function handler(req, res) {
         }
         job.stepResult = await agentLoop(job.stepConversation, { sid, send, job, deadline, dead: () => gone, tools: TOOLS, modelId: step.model });
         send({ t: 'step_done', index: job.stepIndex, title: step.title });
-        if (job.plan.steps.length === 1 && !(job.stepActions || []).length && job.stepResult) {
+        // For a one-step task, the execution model has already produced the
+        // user-facing answer. An extra summary/finalization call is pure cost
+        // and can replace a complete result with another progress statement.
+        if (job.plan.steps.length === 1 && job.stepResult && !isProgressOnly(job.stepResult)) {
           job.finalAnswer = job.stepResult;
           job.phase = 'completed'; job.status = 'completed';
           await checkpoint(job);

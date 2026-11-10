@@ -21,6 +21,13 @@ test('does not classify concrete results as progress narration', () => {
   assert.equal(isProgressOnly('I inspected the project and found the issue in api/chat.js.'), false);
   assert.equal(isProgressOnly('The bug is fixed and all 14 tests passed.'), false);
   assert.equal(isProgressOnly('Here is the corrected implementation.'), false);
+  assert.equal(isProgressOnly('AI news this week includes new model announcements from several labs.'), false);
+});
+
+test('rejects research progress narration and dangling research fragments', () => {
+  assert.equal(isProgressOnly("I'll retry the web research now with fresh searches and direct fetches."), true);
+  assert.equal(isProgressOnly("I'm searching for sources and checking the latest announcements."), true);
+  assert.equal(isProgressOnly('AI news this week November 2026 OpenAI Anthropic Google DeepMind announcement November 2026'), true);
 });
 
 test('read cache is keyed by path and workspace revision', () => {
@@ -59,6 +66,11 @@ test('agent execution has duplicate-read protection, a tool budget, and progress
   assert.match(chat, /isProgressOnly\(answer\)/);
   assert.match(chat, /repeatedly returned progress narration/);
   assert.match(chat, /stepReadCache/);
+  assert.match(chat, /MAX_WEB_SEARCHES/);
+  assert.match(chat, /MAX_PAGE_FETCHES/);
+  assert.match(chat, /finish_reason === 'length'/);
+  assert.match(chat, /PROVIDER_TIMEOUT_MS = 35_000/);
+  assert.match(chat, /job.plan.steps.length === 1 && job.stepResult/);
 });
 
 test('terminal and Python tools reuse cached workspace snapshots', () => {

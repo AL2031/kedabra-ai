@@ -6,7 +6,8 @@ const groqKeys = [...new Set(
 const GOOGLE_KEY = process.env.GOOGLE_API_KEY?.trim();
 const QWEN_VISION_MODEL = process.env.QWEN_VISION_MODEL || process.env.QWEN_MODEL || 'qwen/qwen3.8-27b';
 const GROQ_REASONING_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
-const GOOGLE_VISION_MODEL = process.env.GOOGLE_VISION_MODEL || 'gemini-3.8-flash';
+const configuredGoogleVisionModel = process.env.GOOGLE_VISION_MODEL?.trim();
+const GOOGLE_VISION_MODEL = !configuredGoogleVisionModel || /^gemini-2\.5-(?:flash|pro)(?:-|$)/.test(configuredGoogleVisionModel) ? 'gemini-3.6-flash' : configuredGoogleVisionModel;
 const VISION_TIMEOUT_MS = 15_000;
 const MAX_IMAGE_BYTES = 1_000_000;
 const MAX_TOTAL_IMAGE_BYTES = 2_450_000;
@@ -152,7 +153,7 @@ async function callGemini(prompt, images) {
   const json = await response.json();
   const text = (json.candidates?.[0]?.content?.parts || []).map(part => part.text || '').join('').trim();
   return {
-    label: 'Gemini Vision · Google', model: GOOGLE_VISION_MODEL,
+    label: 'Gemini 3.6 Flash · Google', model: GOOGLE_VISION_MODEL,
     text: text || '(The model returned no text.)',
     usage: json.usageMetadata ? { total_tokens: json.usageMetadata.totalTokenCount } : null,
     ms: Date.now() - started,
@@ -184,7 +185,7 @@ export default async function handler(req, res) {
         const result = id === 'gemini' ? await callGemini(prompt, images) : id === 'reasoning' ? await callGroqReasoning(prompt) : await callGroq(prompt, images);
         return result;
       } catch (error) {
-        return { label: id === 'gemini' ? 'Gemini Vision · Google' : id === 'reasoning' ? 'Groq Reasoning' : 'Qwen 3.8 Vision · Groq', model: id === 'gemini' ? GOOGLE_VISION_MODEL : id === 'reasoning' ? GROQ_REASONING_MODEL : QWEN_VISION_MODEL, error: error.message };
+        return { label: id === 'gemini' ? 'Gemini 3.6 Flash · Google' : id === 'reasoning' ? 'Groq Reasoning' : 'Qwen 3.8 Vision · Groq', model: id === 'gemini' ? GOOGLE_VISION_MODEL : id === 'reasoning' ? GROQ_REASONING_MODEL : QWEN_VISION_MODEL, error: error.message };
       }
     }));
     return res.status(200).json({ results });
