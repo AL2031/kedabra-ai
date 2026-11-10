@@ -68,3 +68,9 @@ These files are included in the complete ZIP but were not changed in the compari
 - Raised the planner and output retry allowance so more substantial plans can be represented, while retaining provider token limits, context compaction, checkpoint/resume, cancellation, and serverless invocation deadlines.
 - Reduced the reference-inspired UI scale modestly: narrower sidebar, smaller navigation controls, smaller heading/composer/quick actions, and tighter chat typography and spacing.
 - Renamed visible model choices: **Coder** (Qwen 3.8 27B), **Thinker** (GPT-OSS 120B), and **Genius** (Gemini 3.6 Flash). Auto selection remains available. Friendly names are also used in progress/step labels and Model Lab; provider IDs remain server-side.
+
+## Browser tab icon update
+
+- Replaced the old purple inline favicon with a monochrome Kedabra `K` monogram that matches the minimal charcoal-and-white workspace branding.
+- Added `favicon.svg` as the primary scalable browser-tab icon, plus `favicon.png`, `favicon.ico`, and `apple-touch-icon.png` fallbacks.
+- Added a dark browser theme color and versioned icon URLs to help browsers refresh cached favicons.

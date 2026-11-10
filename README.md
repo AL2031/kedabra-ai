@@ -166,6 +166,10 @@ Output-size, context-size, timeout, and serverless invocation limits remain beca
 ```text
 kedabra/
 ├── index.html
+├── favicon.svg
+├── favicon.png
+├── favicon.ico
+├── apple-touch-icon.png
 ├── package.json
 ├── vercel.json
 ├── README.md
