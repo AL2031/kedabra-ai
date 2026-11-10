@@ -14,12 +14,14 @@ test('Gemini chat defaults to 3.6 Flash and remaps legacy 2.5 model settings', (
 test('Gemini vision defaults to 3.6 Flash and remaps legacy 2.5 model settings', () => {
   assert.match(vision, /'gemini-3\.6-flash'/);
   assert.match(vision, /gemini-2\\\.5-\(\?:flash\|pro\)/);
-  assert.match(vision, /Gemini 3\.6 Flash · Google/);
+  assert.match(vision, /label: 'Genius'/);
 });
 
 test('model picker sends explicit selection and one-shot web-search state to the backend', () => {
   assert.match(html, /id="modelSelect"/);
   assert.match(html, /modelId:selectedModel,webSearch:webSearchEnabled/);
   assert.match(html, /webSearchEnabled=false;\$\('#webToggle'\)\.classList\.remove\('active'\)/);
-  assert.match(html, /Gemini 3\.6 Flash · Google/);
+  assert.match(html, /option value="coding">Coder/);
+  assert.match(html, /option value="reasoning">Thinker/);
+  assert.match(html, /option value="gemini">Genius/);
 });

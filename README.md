@@ -126,9 +126,11 @@ The included tests use source-level checks and mocked provider responses; they d
 The top-right selector offers:
 
 - **Auto** — choose a configured provider automatically.
-- **GPT-OSS 120B · Groq** — reasoning and general tasks.
-- **Qwen 3.8 27B · Groq** — coding-focused tasks.
-- **Gemini 3.6 Flash · Google** — alternate general model; requires `GOOGLE_API_KEY`.
+- **Coder** — Qwen 3.8 27B on Groq; coding, debugging and implementation.
+- **Thinker** — GPT-OSS 120B on Groq; reasoning, planning, analysis and synthesis.
+- **Genius** — Gemini 3.6 Flash on Google; general and multimodal tasks; requires `GOOGLE_API_KEY`.
+
+These are display names; the provider model IDs remain in server-side configuration.
 
 Unavailable providers are disabled in the selector. The chosen model is saved in browser local storage and sent with each chat request. Web search is a one-request toggle and resets after the message is sent.
 
@@ -140,16 +142,17 @@ The server-side validation currently limits each image to 1 MB and the combined 
 
 ## 6. Token-use and completion safeguards
 
-- Straightforward questions and focused research can skip a separate planning call.
+- Straightforward questions and focused research can skip a separate planning call. Larger plans can contain as many execution steps as required; there is no hard-coded eight-step ceiling.
 - One-step tasks can return their completed result directly rather than paying for redundant summarization and final-answer calls.
 - Earlier chat context is bounded and clipped before transmission.
-- Distinct web searches and page fetches are capped per task, and repeated URLs/queries are cached.
+- Web searches and source-page fetches have no fixed per-task count ceiling; repeated URLs/queries are cached to avoid wasted calls.
 - Tool outputs are limited before they enter the model context.
 - Provider streams have a longer timeout. Output-token truncation is detected and retried with a larger allowance.
 - Progress narration is not accepted as a completed answer. If final synthesis cannot finish, the app reports saved work and makes the incomplete state explicit.
+- There is no fixed task-step count, agent-round count, web-search count, source-fetch count, or per-step tool-call count. Long-running tasks checkpoint their progress and continue across serverless requests until completion, cancellation, or an infrastructure/provider boundary.
 - Research/tool activity is grouped into a collapsible section rather than rendering every event as a separate large card.
 
-The current limits in `api/chat.js` are conservative guardrails. Increase them only after considering the extra token use and runtime cost.
+Output-size, context-size, timeout, and serverless invocation limits remain because providers and hosting impose real technical constraints. They do not impose a fixed number of task steps or tool operations.
 
 ## 7. Security and operating notes
 
@@ -174,6 +177,7 @@ kedabra/
 │   ├── _lib.js
 │   ├── agent-guards.js
 │   ├── chat.js
+│   ├── gemini-compat.js
 │   ├── terminal.js
 │   └── vision.js
 ├── runner/
@@ -182,6 +186,11 @@ kedabra/
     ├── agent-guards.test.js
     ├── chat-final-answer.test.js
     ├── chat-vision-wiring.test.js
+    ├── gemini-thought-signatures.test.js
     ├── model-selection.test.js
     └── vision.test.js
 ```
+
+## Gemini 3 function-calling compatibility
+
+Kedabra preserves Google's `extra_content.google.thought_signature` field on the original assistant tool-call message and sends it back unchanged with the next Gemini request. Do not strip or reconstruct this field when changing the streaming parser or conversation storage. The app also fails fast on non-retryable provider 4xx responses rather than retrying the same invalid payload forever.

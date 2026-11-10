@@ -69,7 +69,7 @@ async function callGroq(prompt, images) {
       }
       const json = await response.json();
       return {
-        label: 'Qwen 3.8 Vision · Groq', model: QWEN_VISION_MODEL,
+        label: 'Coder', model: QWEN_VISION_MODEL,
         text: json.choices?.[0]?.message?.content || '(The model returned no text.)',
         usage: json.usage || null, ms: Date.now() - started,
       };
@@ -105,7 +105,7 @@ async function callGroqReasoning(prompt) {
       }
       const json = await response.json();
       return {
-        label: 'Groq Reasoning', model: GROQ_REASONING_MODEL,
+        label: 'Thinker', model: GROQ_REASONING_MODEL,
         text: json.choices?.[0]?.message?.content || '(The model returned no text.)',
         usage: json.usage || null, ms: Date.now() - started,
       };
@@ -153,7 +153,7 @@ async function callGemini(prompt, images) {
   const json = await response.json();
   const text = (json.candidates?.[0]?.content?.parts || []).map(part => part.text || '').join('').trim();
   return {
-    label: 'Gemini 3.6 Flash · Google', model: GOOGLE_VISION_MODEL,
+    label: 'Genius', model: GOOGLE_VISION_MODEL,
     text: text || '(The model returned no text.)',
     usage: json.usageMetadata ? { total_tokens: json.usageMetadata.totalTokenCount } : null,
     ms: Date.now() - started,
@@ -178,14 +178,14 @@ export default async function handler(req, res) {
       ? [...(groqKeys.length ? ['qwen'] : []), ...(GOOGLE_KEY ? ['gemini'] : []), ...(!images.length && groqKeys.length ? ['reasoning'] : [])]
       : body.model === 'both' ? ['qwen', 'gemini']
       : [body.model === 'gemini' ? 'gemini' : body.model === 'reasoning' ? 'reasoning' : 'qwen'];
-    if (images.length && requested.includes('reasoning')) return res.status(400).json({ error: 'Groq Reasoning is text-only. Remove the image(s) or select a vision model.' });
+    if (images.length && requested.includes('reasoning')) return res.status(400).json({ error: 'Thinker is text-only. Remove the image(s) or select Coder or Genius for image input.' });
     if (!requested.length) return res.status(400).json({ error: 'No AI provider is configured. Add a Groq or Google API key in Vercel.' });
     const results = await Promise.all(requested.map(async id => {
       try {
         const result = id === 'gemini' ? await callGemini(prompt, images) : id === 'reasoning' ? await callGroqReasoning(prompt) : await callGroq(prompt, images);
         return result;
       } catch (error) {
-        return { label: id === 'gemini' ? 'Gemini 3.6 Flash · Google' : id === 'reasoning' ? 'Groq Reasoning' : 'Qwen 3.8 Vision · Groq', model: id === 'gemini' ? GOOGLE_VISION_MODEL : id === 'reasoning' ? GROQ_REASONING_MODEL : QWEN_VISION_MODEL, error: error.message };
+        return { label: id === 'gemini' ? 'Genius' : id === 'reasoning' ? 'Thinker' : 'Coder', model: id === 'gemini' ? GOOGLE_VISION_MODEL : id === 'reasoning' ? GROQ_REASONING_MODEL : QWEN_VISION_MODEL, error: error.message };
       }
     }));
     return res.status(200).json({ results });

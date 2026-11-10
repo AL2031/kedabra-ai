@@ -218,6 +218,28 @@ body.sidebar-collapsed #side{width:84px;padding-left:14px;padding-right:14px}bod
 @media(max-width:560px){.side-brand-row{padding-bottom:24px}.brand-mark{width:40px;height:44px;font-size:38px}.brand-copy b{font-size:21px}.side-nav-item{height:52px}.newc{height:52px}.history-divider{margin:22px 9px}.history-head{font-size:14px}.top-actions{gap:6px}.header-icon{display:none}.model-select-wrap{height:38px;min-width:128px;padding:0 10px}.model-select-wrap select{font-size:12px}#main.home-view #empty{top:36%;width:100%}#main.home-view #empty h1{font-size:44px}#main.home-view #empty p{font-size:16px}.home-view #bar{top:49%;padding:0 13px}.home-view #box{height:120px;min-height:120px;border-radius:23px}.home-view .composer-top #in{font-size:15px}.home-view .composer-tools button{width:43px;height:43px}.home-view .composer-bottom #go{width:43px;height:43px}.quick-actions{margin-top:17px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.quick-actions>button,.more-wrap>button{width:100%;height:42px;min-width:0}.more-wrap{grid-column:1/-1}.more-wrap>button{max-width:none}.composer-footer{display:none}#box{border-radius:16px}.composer-top #in{font-size:14px}.composer-tools button{width:36px;height:36px}.composer-bottom #go{width:39px;height:39px}.md{font-size:14px}.row.u .ub{max-width:93%}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation-duration:.01ms!important;animation-iteration-count:1!important}}
 
+
+
+/* Compact density pass: modestly smaller controls and typography across the workspace. */
+#side{width:clamp(270px,19.2vw,360px);padding:25px 17px 16px}
+.side-brand-row{padding:0 10px 29px}.brand{gap:17px}.brand-mark{width:44px;height:48px;font-size:40px}.brand-copy b{font-size:22px}
+.side-nav-item{height:55px;gap:23px;padding:0 17px;font-size:15px}.side-nav-item .ic{width:24px;height:24px}
+.newc{height:54px;padding:0 17px;font-size:15px;gap:23px}.newc .ic{width:24px;height:24px}.newc kbd{font-size:12px;line-height:25px;padding:1px 10px}
+.history-divider{margin:27px 9px 30px}.history-head{margin:0 10px 15px;font-size:14px}
+#list{gap:3px}.ci{min-height:38px;padding:7px 10px;font-size:13px}.empt{font-size:13px}
+.side-bottom{padding:26px 9px 0}.account-avatar{width:43px;height:43px;font-size:19px}.account-row{gap:13px}.account-copy b{font-size:14px}
+header{height:74px;padding:0 26px}.model-select-wrap{height:41px;min-width:144px;padding:0 12px}.model-select-wrap select{font-size:13px}
+#msgs{padding:18px 26px 23px}.col{max-width:840px;gap:24px}.row{gap:12px}.mark.sm{width:28px;height:28px}
+.row.u .ub{padding:10px 14px;font-size:13.5px}.md{font-size:14px;line-height:1.7}.md pre code{font-size:12px;padding:12px 14px}
+#bar{padding:7px 26px 17px}.composer-shell,.chatpreviews{max-width:840px}#box{max-width:840px;min-height:96px;padding:9px 11px 8px;border-radius:17px}
+.composer-top #in{font-size:15px;min-height:36px}.composer-tools button{width:39px;height:39px}.composer-tools .ic{width:19px;height:19px}.composer-bottom #go{width:44px;height:44px}
+.home-view #empty h1{font-size:clamp(38px,3.7vw,64px)}.home-view #empty p{font-size:clamp(16px,1.5vw,26px)}
+.home-view #box{height:130px;min-height:130px;padding:12px 14px 9px;border-radius:27px}.home-view .composer-top #in{min-height:44px;font-size:16px}.home-view .composer-tools{gap:14px}.home-view .composer-tools button{width:47px;height:47px}.home-view .composer-bottom #go{width:47px;height:47px}
+.quick-actions{gap:13px;margin-top:27px}.quick-actions>button,.more-wrap>button{height:48px;min-width:136px;gap:12px;padding:0 18px;font-size:14px}.quick-actions .ic{width:22px;height:22px}.more-wrap>button{min-width:128px}
+@media(max-width:1100px){#side{width:278px}}
+@media(max-width:860px){#side{width:min(316px,88vw);padding:22px 16px 14px}header{height:60px;padding:0 13px}#msgs{padding:18px 13px}#bar{padding:8px 13px 11px}.home-view #box{height:116px;min-height:116px}.quick-actions{gap:7px;margin-top:18px}.quick-actions>button,.more-wrap>button{height:42px;min-width:0;padding:0 11px;font-size:12px}}
+@media(max-width:560px){.side-brand-row{padding-bottom:21px}.brand-mark{width:37px;height:41px;font-size:35px}.brand-copy b{font-size:19px}.side-nav-item{height:48px}.newc{height:48px}.history-divider{margin:19px 8px}.history-head{font-size:13px}.model-select-wrap{height:36px;min-width:118px;padding:0 9px}.model-select-wrap select{font-size:11px}#main.home-view #empty h1{font-size:39px}#main.home-view #empty p{font-size:15px}.home-view #bar{top:49%;padding:0 12px}.home-view #box{height:110px;min-height:110px;border-radius:21px}.home-view .composer-top #in{font-size:14px}.home-view .composer-tools button{width:39px;height:39px}.home-view .composer-bottom #go{width:39px;height:39px}.quick-actions{margin-top:14px;gap:7px}.quick-actions>button,.more-wrap>button{height:39px;font-size:12px}.composer-tools button{width:34px;height:34px}.composer-bottom #go{width:37px;height:37px}}
+
 </style></head><body>
 <svg width="0" height="0" style="position:absolute"><defs>
 <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol><symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></symbol>
@@ -256,7 +278,7 @@ body.sidebar-collapsed #side{width:84px;padding-left:14px;padding-right:14px}bod
 <main id="main" class="home-view">
   <header><button class="ib mnav" id="menu" aria-label="Menu"><svg class="ic"><use href="#i-menu"/></svg></button><div id="title">New conversation</div><span id="via" class="pill"></span>
     <div class="top-actions"><button class="ib header-icon" id="exp" aria-label="Export chat" title="Export conversation as Markdown"><svg class="ic"><use href="#i-down"/></svg></button>
-      <label class="model-select-wrap" aria-label="Choose model"><select id="modelSelect" aria-label="Choose AI model"><option value="auto">Auto · Best available</option><option value="reasoning">GPT-OSS 120B · Groq</option><option value="coding">Qwen 3.8 27B · Groq</option><option value="gemini">Gemini 3.6 Flash · Google</option></select><svg class="ic"><use href="#i-chev-down"/></svg></label>
+      <label class="model-select-wrap" aria-label="Choose model"><select id="modelSelect" aria-label="Choose AI model"><option value="auto">Auto · Best available</option><option value="coding">Coder</option><option value="reasoning">Thinker</option><option value="gemini">Genius</option></select><svg class="ic"><use href="#i-chev-down"/></svg></label>
     </div>
   </header>
   <div id="msgs" role="log" aria-live="polite"></div>
@@ -278,7 +300,7 @@ body.sidebar-collapsed #side{width:84px;padding-left:14px;padding-right:14px}bod
   <div class="labhead"><div class="mark">K</div><h2 id="labTitle">Model Lab</h2><button class="ib" id="labClose" aria-label="Close model lab">×</button></div>
   <p class="labdesc">Run standalone text or image-understanding tests against the configured models. Images are sent to your server-side provider key and are not added to your chat history.</p>
   <div class="labgrid">
-   <div class="field"><label for="labModel">Model to test</label><select id="labModel"><option value="qwen">Qwen 3.8 Vision · Groq</option><option value="gemini">Gemini 3.6 Flash · Google</option><option value="reasoning">Groq Reasoning · text-only</option><option value="both">Compare vision models</option><option value="all">Compare all configured models</option></select></div>
+   <div class="field"><label for="labModel">Model to test</label><select id="labModel"><option value="qwen">Coder</option><option value="gemini">Genius</option><option value="reasoning">Thinker · text-only</option><option value="both">Compare vision models</option><option value="all">Compare all configured models</option></select></div>
    <div class="field"><label for="labFiles">Images (optional, up to 3)</label><input id="labFiles" type="file" accept="image/png,image/jpeg,image/webp" multiple></div>
    <div class="field labfull"><label for="labPrompt">Test prompt</label><textarea id="labPrompt" placeholder="Example: Describe the scene, identify visible objects, and read any text accurately.">Describe what is in the image. Separate directly visible facts from guesses, and mention any text you can read.</textarea></div>
    <div class="labfull"><div class="imgpreviews" id="labPreviews"></div></div>
@@ -484,9 +506,9 @@ $('#exp').onclick=()=>{if(!cur)return;const a=document.createElement('a');a.href
 document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='k'){e.preventDefault();newChat()}if(e.key==='Escape'&&busy)stop()});
 
 // Persisted model picker and working home-screen shortcuts.
-const modelLabels={auto:'Auto',reasoning:'GPT-OSS 120B',coding:'Qwen 3.8 27B',gemini:'Gemini 3.6 Flash'};
+const modelLabels={auto:'Auto',reasoning:'Thinker',coding:'Coder',gemini:'Genius'};
 function updateModelHint(){const hint=$('#composerModelHint');if(hint)hint.textContent=modelLabels[selectedModel]||'Auto'}
-async function loadModelCatalog(){const select=$('#modelSelect');if(!select)return;try{const response=await fetch('/api/chat');if(!response.ok)throw new Error('Could not load model availability');const catalog=(await response.json()).models||{};const opts=[['auto','Auto · Best available',true],['reasoning','GPT-OSS 120B · Groq',!!catalog.reasoning?.available],['coding','Qwen 3.8 27B · Groq',!!catalog.coding?.available],['gemini','Gemini 3.6 Flash · Google',!!catalog.gemini?.available]];select.innerHTML=opts.map(([id,label,available])=>`<option value="${id}" ${!available&&id!=='auto'?'disabled':''}>${label}${!available&&id!=='auto'?' · not configured':''}</option>`).join('');if(selectedModel!=='auto'&&!catalog[selectedModel]?.available)selectedModel='auto';select.value=selectedModel}catch{select.value=selectedModel||'auto'}updateModelHint()}
+async function loadModelCatalog(){const select=$('#modelSelect');if(!select)return;try{const response=await fetch('/api/chat');if(!response.ok)throw new Error('Could not load model availability');const catalog=(await response.json()).models||{};const opts=[['auto','Auto · Best available',true],['coding','Coder',!!catalog.coding?.available],['reasoning','Thinker',!!catalog.reasoning?.available],['gemini','Genius',!!catalog.gemini?.available]];select.innerHTML=opts.map(([id,label,available])=>`<option value="${id}" ${!available&&id!=='auto'?'disabled':''}>${label}${!available&&id!=='auto'?' · not configured':''}</option>`).join('');if(selectedModel!=='auto'&&!catalog[selectedModel]?.available)selectedModel='auto';select.value=selectedModel}catch{select.value=selectedModel||'auto'}updateModelHint()}
 $('#modelSelect').value=selectedModel;$('#modelSelect').addEventListener('change',e=>{selectedModel=e.target.value||'auto';localStorage.kd_model=selectedModel;updateModelHint()});
 $('#collapseSide').onclick=()=>document.body.classList.toggle('sidebar-collapsed');$('#home').onclick=()=>newChat();
 $('#historySearchBtn').onclick=()=>{const wrap=$('#historySearchWrap');wrap.hidden=!wrap.hidden;if(!wrap.hidden)$('#sq').focus();else{$('#sq').value='';q='';sidebar()}};
@@ -500,7 +522,7 @@ let labImages=[],labModels={};
 function labStatus(t){$('#labStatus').textContent=t}
 async function loadLabModels(){
  try{const r=await fetch('/api/vision');if(!r.ok)throw new Error('status '+r.status);labModels=await r.json();
-  const opts=[['qwen','Qwen 3.8 Vision · Groq'],['gemini','Gemini 3.6 Flash · Google'],['reasoning','Groq Reasoning · text-only'],['both','Compare vision models'],['all','Compare all configured models']];
+  const opts=[['qwen','Coder'],['gemini','Genius'],['reasoning','Thinker · text-only'],['both','Compare vision models'],['all','Compare all configured models']];
   $('#labModel').innerHTML=opts.map(([id,label])=>`<option value="${id}" ${id!=='both'&&id!=='all'&&!labModels[id]?.available?'disabled':''} ${id==='both'&&!(labModels.qwen?.available&&labModels.gemini?.available)?'disabled':''} ${id==='all'&&!(labModels.qwen?.available||labModels.gemini?.available)?'disabled':''}>${label}${!['both','all'].includes(id)&&!labModels[id]?.available?' · not configured':''}</option>`).join('');
   const preferred=labModels.qwen?.available?'qwen':labModels.gemini?.available?'gemini':labModels.reasoning?.available?'reasoning':'qwen';$('#labModel').value=preferred;
   labStatus([labModels.qwen?.available?'Groq connected':'Groq key missing',labModels.gemini?.available?'Google connected':'Google key missing'].join(' · '));
@@ -555,7 +577,7 @@ $('#labClose').onclick=()=>{$('#labShade').hidden=true};
 $('#labShade').addEventListener('click',e=>{if(e.target===$('#labShade'))$('#labShade').hidden=true});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')$('#labShade').hidden=true});
 $('#labRun').onclick=async()=>{
- const prompt=$('#labPrompt').value.trim(),model=$('#labModel').value;if(!prompt){labStatus('Enter a test prompt.');return}if(model==='reasoning'&&labImages.length){labStatus('Groq Reasoning is text-only. Remove images or choose a vision model.');return}
+ const prompt=$('#labPrompt').value.trim(),model=$('#labModel').value;if(!prompt){labStatus('Enter a test prompt.');return}if(model==='reasoning'&&labImages.length){labStatus('Thinker is text-only. Remove images or choose Coder or Genius for image input.');return}
  const btn=$('#labRun');btn.disabled=true;btn.textContent='Testing…';$('#labResults').innerHTML='';labStatus('Sending test to selected model(s)…');
  const started=performance.now();
  try{

@@ -8,10 +8,10 @@ import { mergeProviderToolCall, hasGoogleThoughtSignature, messagesForProvider, 
 const DAY = new Date().toDateString();
 const SYS = `You are Kedabra, an expert AI engineer and assistant at kedabra.ai, running in a persistent cloud workspace.
 Tools: web_search, fetch_url, run_python, run_javascript, create_file, write_files, read_file, edit_file, list_files, terminal, present_file, spawn_subagents.
-Execution discipline: inspect the workspace once, then inspect only files relevant to the assigned task. Never read the same file or list the workspace repeatedly unless the file changed. A repeated read of the same path returns a cached result. Do not issue speculative or unrelated commands. Prefer one focused batch of file reads, then implement the task, then run focused tests and verify changed files. Do not narrate what you plan to do; actually do it. A progress announcement is not a deliverable. Preserve existing features unless asked to remove them. Never claim a test ran unless it did. Be concise and use markdown. For web research, use at most 2 distinct searches and 3 useful source pages unless the user explicitly asks for exhaustive research; prioritize primary/authoritative sources, avoid duplicate domains, and stop once evidence is sufficient. Cite researched claims with markdown links to the source URLs and include publication dates when available. Return the actual findings, not a plan to search. Today is ${DAY}.`;
+Execution discipline: inspect the workspace once, then inspect only files relevant to the assigned task. Never read the same file or list the workspace repeatedly unless the file changed. A repeated read of the same path returns a cached result. Do not issue speculative or unrelated commands. Prefer one focused batch of file reads, then implement the task, then run focused tests and verify changed files. Do not narrate what you plan to do; actually do it. A progress announcement is not a deliverable. Preserve existing features unless asked to remove them. Never claim a test ran unless it did. Be concise and use markdown. For web research, use as many distinct searches and source pages as the task genuinely requires; there is no fixed search or page-count ceiling. Prioritize primary/authoritative sources, avoid duplicate domains, cache repeated reads, and stop when evidence is sufficient. Cite researched claims with markdown links to the source URLs and include publication dates when available. Return the actual findings, not a plan to search. Today is ${DAY}.`;
 const PLANNER_SYS = `You are Kedabra's task planner and model router. Convert the user's request into an executable plan. Return ONLY valid JSON, no markdown.
 Schema: {"objective":"...","reason":"...","steps":[{"id":"s1","title":"short label","task":"detailed self-contained instructions and success criteria","model":"reasoning|coding|gemini"}]}
-Use 1 step for a simple direct answer, 1-3 steps for normal projects, and at most 5 for genuinely large multi-part work. Do not split inspection, implementation and verification into separate steps when one focused step can do them. Avoid steps that cause later models to re-inspect files already inspected. Make steps sequential only when later steps depend on earlier output. Prefer parallel subtasks only when truly independent and use spawn_subagents inside a step when useful. Select the lowest-cost model that can do each step reliably: reasoning for planning, explanation, synthesis and general tasks; coding for code creation, debugging, refactoring and tests; gemini only when a distinct model is a good fit and is listed as available. Model IDs must exactly match the available catalog. Do not invent models or use a model that is not listed. Keep each step concrete and independently actionable. Do not create unnecessary steps.`;
+Use one step for a simple direct answer and choose as many steps as the task genuinely requires. There is no fixed maximum number of steps, agent rounds, or tool operations. Do not split inspection, implementation and verification into separate steps when one focused step can do them. Avoid steps that cause later models to re-inspect files already inspected. Make steps sequential only when later steps depend on earlier output. Prefer parallel subtasks only when truly independent and use spawn_subagents inside a step when useful. Select the lowest-cost model that can do each step reliably: reasoning for planning, explanation, synthesis and general tasks; coding for code creation, debugging, refactoring and tests; gemini only when a distinct model is a good fit and is listed as available. Model IDs must exactly match the available catalog. Do not invent models or use a model that is not listed. Keep each step concrete and independently actionable. Do not create unnecessary steps.`;
 const SUMMARY_SYS = `You are Kedabra's execution-context summarizer. Update the running project memory using the previous summary and the latest completed step. Return ONLY the updated summary as plain text. Preserve all still-relevant user requirements, decisions, constraints, files created/changed and their roles, interfaces, tests and outcomes, unresolved issues, and the exact next action. Remove stale detail and repetition. Do not claim success unless the step result or tool output confirms it. Keep the result compact (aim for 1,500-3,000 characters; never exceed 5,000). This summary will be the ONLY prior-task context shown to the next execution step.`;
 const SUBSYS = `You are a focused Kedabra sub-agent. Do ONLY your assigned task using the tools, write requested files to exact paths, and reply with a short summary of changes, file paths, tests, and anything the lead must know.`;
 
@@ -27,20 +27,16 @@ const MODELS = {
   gemini: (() => { const configured = process.env.GOOGLE_MODEL?.trim(); return !configured || /^gemini-2\.5-(?:flash|pro)(?:-|$)/.test(configured) ? 'gemini-3.6-flash' : configured; })(),
 };
 const MODEL_CATALOG = {
-  reasoning: { id: 'reasoning', model: MODELS.reasoning, provider: 'groq', purpose: 'planning, reasoning, general work and final synthesis' },
-  coding: { id: 'coding', model: MODELS.coding, provider: 'groq', purpose: 'software engineering, code edits, debugging and tests' },
-  ...(GOOGLE_KEY ? { gemini: { id: 'gemini', model: MODELS.gemini, provider: 'google', purpose: 'alternate model for suitable research and general tasks' } } : {}),
+  reasoning: { id: 'reasoning', label: 'Thinker', model: MODELS.reasoning, provider: 'groq', purpose: 'deep reasoning, planning, analysis, general work and final synthesis' },
+  coding: { id: 'coding', label: 'Coder', model: MODELS.coding, provider: 'groq', purpose: 'software engineering, code creation, debugging, refactoring and tests' },
+  ...(GOOGLE_KEY ? { gemini: { id: 'gemini', label: 'Genius', model: MODELS.gemini, provider: 'google', purpose: 'fast general intelligence and multimodal tasks' } } : {}),
 };
 const badUntil = new Map();
 let roundRobin = 0;
 const INVOCATION_BUDGET_MS = 180_000;
 // Large reasoning models need more than 14s to finish a streamed response.
 const PROVIDER_TIMEOUT_MS = 35_000;
-const MAX_AGENT_ROUNDS = 8;
-const MAX_TOOL_CALLS_PER_STEP = 12;
 const MAX_TOOL_OUTPUT = 5_000;
-const MAX_WEB_SEARCHES = 3;
-const MAX_PAGE_FETCHES = 4;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const CODE_RE = /```|\b(code|coding|programs?|programming|script|scripts|function|bug|debug|fix|error|exception|stack ?trace|compile|refactor|implement|algorithm|regex|api|endpoint|sdk|html|css|javascript|typescript|python|java|rust|golang|sql|database|react|vue|svelte|next\.js|node|npm|pip|git|github|repo|deploy|docker|website|web ?site|web ?page|web ?app|game|component|frontend|backend|full[- ]?stack|bot|extension|plugin|framework|terminal|shell|bash|cli|json|yaml|xml|lua|roblox|three\.js|build me)\b|c\+\+|c#|\.(py|js|ts|html|css|json|jsx|tsx)\b/i;
 
@@ -141,7 +137,7 @@ async function llm(messages, tools, modelId, { deadline, send, dead, onText, max
             temperature: provider.modelId === 'coding' ? 0.2 : 0.45,
             // If the provider reports a length stop, the next attempt gets a
             // larger output allowance instead of silently accepting a fragment.
-            max_tokens: Math.min(6_000, Math.round(baseTokens * Math.pow(1.6, Math.min(cycle, 2)))),
+            max_tokens: Math.min(12_000, Math.round(baseTokens * Math.pow(1.6, Math.min(cycle, 3)))),
             stream: true,
             ...(tools?.length ? { tools, tool_choice: 'auto' } : {}),
           };
@@ -212,7 +208,7 @@ function fallbackPlan(task) {
   return {
     objective: task,
     reason: 'A safe one-step fallback plan was used because the planner response was not valid JSON.',
-    steps: [{ id: 's1', title: code ? 'Implement and verify' : 'Answer the request', task, model: code ? 'coding' : 'reasoning', modelName: MODEL_CATALOG[code ? 'coding' : 'reasoning'].model }],
+    steps: [{ id: 's1', title: code ? 'Implement and verify' : 'Answer the request', task, model: code ? 'coding' : 'reasoning', modelName: MODEL_CATALOG[code ? 'coding' : 'reasoning'].label }],
   };
 }
 
@@ -235,7 +231,7 @@ function directPlan(task, preferredModelId = 'auto', webSearch = false) {
   return {
     objective: task,
     reason: 'A single focused pass is sufficient; planning would add overhead without improving the result.',
-    steps: [{ id: 's1', title: 'Answer the request', task: `${task}${webInstruction}\n\nComplete the request directly. For current or niche facts, use a small number of reliable web searches and verify only the most useful sources. Do not narrate intentions. End with a complete, self-contained answer.`, model, modelName: MODEL_CATALOG[model].model }],
+    steps: [{ id: 's1', title: 'Answer the request', task: `${task}${webInstruction}\n\nComplete the request directly. For current or niche facts, search as extensively as the task requires and verify useful primary sources. Do not narrate intentions. End with a complete, self-contained answer.`, model, modelName: MODEL_CATALOG[model].label }],
   };
 }
 
@@ -246,19 +242,19 @@ async function makePlan(job, deadline, send, dead) {
   const preference = MODEL_CATALOG[job.selectedModel] ? `\n\nUSER MODEL SELECTION: The user explicitly chose ${job.selectedModel} (${MODEL_CATALOG[job.selectedModel].model}). Use this model for every execution step; do not switch models unless it is unavailable.` : '';
   const webInstruction = job.webSearch ? '\n\nWEB SEARCH MODE: The user explicitly enabled web search. Use web_search to gather current, relevant sources and cite the source URLs in the final answer.' : '';
   const prompt = `AVAILABLE MODELS:\n${JSON.stringify(catalog)}\n\nMODEL-SUMMARIZED CONVERSATION CONTEXT:\n${job.summary || '(none)'}\n\nVISUAL REFERENCES (already inspected by the multimodal model; treat these as source material):\n${job.visualContext || '(No images attached.)'}\n\nCURRENT USER REQUEST:\n${job.request}${preference}${webInstruction}\n\nCreate the execution plan. Choose an exact model ID for every step. Keep related inspection, implementation and testing in the same step where practical. Include only the files and tools needed. Do not create multiple steps that would reread the same workspace files. If visual references are present, make sure implementation steps explicitly use their relevant details. Do not ask the coding model to infer details that are already established in the visual analysis.`;
-  const response = await llm([{ role: 'system', content: PLANNER_SYS }, { role: 'user', content: prompt }], [], 'reasoning', { deadline, send, dead, maxTokens: 900 });
+  const response = await llm([{ role: 'system', content: PLANNER_SYS }, { role: 'user', content: prompt }], [], 'reasoning', { deadline, send, dead, maxTokens: 12_000 });
   const data = parseJsonObject(response.msg.content);
   const allowed = new Set(Object.keys(MODEL_CATALOG));
-  const steps = Array.isArray(data?.steps) ? data.steps.slice(0, 6).map((step, index) => ({
+  const steps = Array.isArray(data?.steps) ? data.steps.map((step, index) => ({
     id: String(step.id || `s${index + 1}`).slice(0, 24),
     title: String(step.title || `Step ${index + 1}`).slice(0, 90),
     task: String(step.task || '').slice(0, 5000),
     model: MODEL_CATALOG[job.selectedModel] ? job.selectedModel : (allowed.has(step.model) ? step.model : 'reasoning'),
-    modelName: MODEL_CATALOG[job.selectedModel]?.model || MODEL_CATALOG[allowed.has(step.model) ? step.model : 'reasoning'].model,
+    modelName: MODEL_CATALOG[job.selectedModel]?.label || MODEL_CATALOG[allowed.has(step.model) ? step.model : 'reasoning'].label,
   })).filter(step => step.task) : [];
   if (steps.length) return { objective: String(data.objective || job.request).slice(0, 1000), reason: String(data.reason || '').slice(0, 800), steps };
   const fallback = fallbackPlan(job.request);
-  if (MODEL_CATALOG[job.selectedModel]) fallback.steps.forEach(step => { step.model = job.selectedModel; step.modelName = MODEL_CATALOG[job.selectedModel].model; });
+  if (MODEL_CATALOG[job.selectedModel]) fallback.steps.forEach(step => { step.model = job.selectedModel; step.modelName = MODEL_CATALOG[job.selectedModel].label; });
   return fallback;
 }
 
@@ -343,7 +339,6 @@ async function runTool(name, args, { sid, send, tid, job, deadline, dead, modelI
       job.webSearchCache ||= [];
       const cached = job.webSearchCache.find(item => item.key === key);
       if (cached) return { cached: true, results: cached.results };
-      if ((job.webSearchCount || 0) >= MAX_WEB_SEARCHES) return { error: `Research budget reached (${MAX_WEB_SEARCHES} searches). Use the evidence already collected and write the answer.` };
       job.webSearchCount = (job.webSearchCount || 0) + 1;
       const results = await search(query);
       job.webSearchCache.push({ key, results });
@@ -357,7 +352,6 @@ async function runTool(name, args, { sid, send, tid, job, deadline, dead, modelI
       job.webFetchCache ||= [];
       const cached = job.webFetchCache.find(item => item.url === url);
       if (cached) return { cached: true, url, content: cached.content };
-      if ((job.webFetchCount || 0) >= MAX_PAGE_FETCHES) return { error: `Source-reading budget reached (${MAX_PAGE_FETCHES} pages). Use the evidence already collected and write the answer.` };
       job.webFetchCount = (job.webFetchCount || 0) + 1;
       const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Kedabra/1.0)' }, signal: AbortSignal.timeout(10_000) });
       if (!response.ok) return { error: `Fetch failed (${response.status})` };
@@ -432,8 +426,12 @@ async function agentLoop(conversation, options) {
   let activeModel = selectedModel;
   let progressOnlyCount = 0;
 
-  for (let round = 0; round < MAX_AGENT_ROUNDS; round++) {
+  // No fixed agent-round or tool-call count: continue until the model completes
+  // the step, the user cancels, or this serverless invocation reaches its deadline.
+  // Tool results are checkpointed so long-running work can resume in a fresh request.
+  for (;;) {
     if (dead?.()) throw new CancelRun();
+    if (Date.now() >= deadline) throw new PauseRun();
 
     // Resume any assistant tool calls that were checkpointed before a request paused.
     const previousToolMessage = [...conversation].reverse().find(message => message.role === 'assistant' && message.tool_calls?.length);
@@ -445,7 +443,7 @@ async function agentLoop(conversation, options) {
         deadline, send, dead,
         onText: nested ? undefined : options.onText,
       });
-      if (!nested) send({ t: 'via', via, model: usedModel, modelName: MODEL_CATALOG[usedModel]?.model || usedModel });
+      if (!nested) send({ t: 'via', via, model: usedModel, modelName: MODEL_CATALOG[usedModel]?.label || usedModel });
 
       if (!msg.tool_calls?.length) {
         const answer = String(msg.content || '').trim();
@@ -462,7 +460,7 @@ async function agentLoop(conversation, options) {
             const alternate = preferredAlternates.find(id => MODEL_CATALOG[id] && id !== activeModel);
             if (alternate) {
               activeModel = alternate;
-              if (!nested) send({ t: 'agent_fallback', model: MODEL_CATALOG[alternate].model, detail: 'Switching models after repeated progress-only responses.' });
+              if (!nested) send({ t: 'agent_fallback', model: MODEL_CATALOG[alternate].label, detail: 'Switching models after repeated progress-only responses.' });
             }
           }
           if (progressOnlyCount >= 4) {
@@ -480,6 +478,7 @@ async function agentLoop(conversation, options) {
 
     for (const call of pendingCalls) {
       if (dead?.()) throw new CancelRun();
+      if (Date.now() >= deadline) throw new PauseRun();
       job.stepToolCalls = (job.stepToolCalls || 0) + 1;
       let args = {};
       try { args = JSON.parse(call.function.arguments || '{}'); } catch {}
@@ -495,8 +494,6 @@ async function agentLoop(conversation, options) {
         output = cached.sameStep
           ? { cached: true, note: 'This exact read was already completed in this step and the earlier result is in the tool history. Do not call it again; continue the task.', previousReadLength: cached.output.length, repeatedReadNumber: cached.hits }
           : `CACHED WORKSPACE READ (unchanged since step ${cached.previousStep + 1}):\n${cached.output}`;
-      } else if (job.stepToolCalls > MAX_TOOL_CALLS_PER_STEP) {
-        output = { error: `Tool-call budget reached (${MAX_TOOL_CALLS_PER_STEP} calls for this step). Stop inspecting and unrelated experimentation; use the information already collected to complete the assigned task, or report the precise blocker.` };
       } else {
         try { output = await runTool(name, args, { sid, send, tid: call.id, job, deadline, dead, modelId: activeModel }); }
         catch (error) { output = { error: error.message }; }
@@ -520,10 +517,6 @@ async function agentLoop(conversation, options) {
       conversation.push({ role: 'tool', tool_call_id: call.id, name, content: serialized.slice(0, MAX_TOOL_OUTPUT) });
       if (!nested) await checkpoint(job);
 
-      // Do not let a model burn the remaining request on endless no-op tool calls.
-      if (job.stepToolCalls >= MAX_TOOL_CALLS_PER_STEP + 4) {
-        return 'The step stopped after reaching its tool-call safety limit. The workspace and completed tool results have been preserved, but the requested work was not verified as complete.';
-      }
     }
 
     if (!nested && conversation.length > 14) {
@@ -531,7 +524,6 @@ async function agentLoop(conversation, options) {
       await checkpoint(job);
     }
   }
-  return `The step reached its ${MAX_AGENT_ROUNDS}-round execution limit without producing a verified final result. Completed tool actions and workspace changes were preserved; the task is not marked complete.`;
 }
 
 async function checkpoint(job) {
@@ -700,7 +692,7 @@ export default async function handler(req, res) {
           job.phase = 'finalizing'; await checkpoint(job); continue;
         }
         const step = job.plan.steps[job.stepIndex];
-        send({ t: 'step', index: job.stepIndex, total: job.plan.steps.length, title: step.title, model: step.model, modelName: step.modelName || MODEL_CATALOG[step.model]?.model || step.model, status: 'running' });
+        send({ t: 'step', index: job.stepIndex, total: job.plan.steps.length, title: step.title, model: step.model, modelName: step.modelName || MODEL_CATALOG[step.model]?.label || step.model, status: 'running' });
         if (!job.stepConversation) {
           const context = String(job.summary || '(No prior execution context.)').slice(-7_000);
           job.stepConversation = [

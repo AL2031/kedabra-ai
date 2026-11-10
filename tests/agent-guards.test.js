@@ -60,17 +60,26 @@ test('cache invalidation is triggered by workspace mutation tools, not read-only
   assert.equal(toolMutatesWorkspace('terminal', { command: 'npm test' }), true);
 });
 
-test('agent execution has duplicate-read protection, a tool budget, and progress-result guardrails', () => {
+test('agent execution has duplicate-read protection and progress-result guardrails', () => {
   assert.match(chat, /findCachedRead\(job, readKey/);
-  assert.match(chat, /MAX_TOOL_CALLS_PER_STEP/);
   assert.match(chat, /isProgressOnly\(answer\)/);
   assert.match(chat, /repeatedly returned progress narration/);
   assert.match(chat, /stepReadCache/);
-  assert.match(chat, /MAX_WEB_SEARCHES/);
-  assert.match(chat, /MAX_PAGE_FETCHES/);
+  assert.doesNotMatch(chat, /MAX_WEB_SEARCHES|MAX_PAGE_FETCHES/);
   assert.match(chat, /finish_reason === 'length'/);
   assert.match(chat, /PROVIDER_TIMEOUT_MS = 35_000/);
   assert.match(chat, /job.plan.steps.length === 1 && job.stepResult/);
+});
+
+
+test('agent execution and planning have no fixed step, round, or tool-call count limits', () => {
+  assert.doesNotMatch(chat, /MAX_AGENT_ROUNDS|MAX_TOOL_CALLS_PER_STEP/);
+  assert.match(chat, /for \(;;\)/);
+  assert.match(chat, /There is no fixed maximum number of steps/);
+  assert.doesNotMatch(chat, /data\?\.steps\.slice\(0,/);
+  assert.doesNotMatch(chat, /at most \d+ for genuinely large/i);
+  assert.match(chat, /maxTokens: 12_000/);
+  assert.match(chat, /reaches its deadline/);
 });
 
 test('terminal and Python tools reuse cached workspace snapshots', () => {

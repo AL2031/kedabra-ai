@@ -100,7 +100,7 @@ test('all mode includes the text-only reasoning model when no image is attached'
   await handler({ method: 'POST', body: { model: 'all', prompt: 'Explain recursion.', images: [] } }, response);
   assert.equal(response.statusCode, 200);
   assert.equal(response.payload.results.length, 3);
-  assert.equal(response.payload.results.some(item => item.label === 'Groq Reasoning'), true);
+  assert.equal(response.payload.results.some(item => item.label === 'Thinker'), true);
 });
 
 
@@ -125,7 +125,7 @@ test('normal agent automatically falls back to Gemini when Groq vision fails', a
   };
   const result = await analyzeImages('Inspect this screenshot.', [image]);
   assert.match(result.text, /Gemini inspected/);
-  assert.match(result.label, /Gemini/);
+  assert.equal(result.label, 'Genius');
   assert.equal(calls.length, 2);
 });
 
