@@ -1,4 +1,4 @@
-import { put, list, del } from '@vercel/blob';
+import { listFiles, readFileBytes, readFilesBytes, putFile, removeFiles } from './_store.js';
 import fs from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -6,9 +6,16 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 const exec = promisify(execFile);
 
-const root = s => `ws/${String(s || 'anon').replace(/[^\w-]/g, '')}/`;
-const norm = p => String(p || '').replace(/\\/g, '/').replace(/^\/+/, '').replace(/\.\.+\/?/g, '').replace(/\/+/g, '/');
+const root = s => `ws/${String(s || 'anon').replace(/[^\w-]/g, '')}/`; // cache key only; files are keyed by sid in the database
+export const norm = p => String(p || '').replace(/\\/g, '/').replace(/^\/+/, '').replace(/\.\.+\/?/g, '').replace(/\/+/g, '/');
 const TYPES = { html: 'text/html', css: 'text/css', js: 'text/javascript', json: 'application/json', md: 'text/markdown', svg: 'image/svg+xml', csv: 'text/csv', png: 'image/png', jpg: 'image/jpeg', py: 'text/x-python' };
+export const contentTypeFor = p => {
+  const ext = norm(p).split('.').pop().toLowerCase();
+  return (TYPES[ext] || 'text/plain') + (TYPES[ext]?.startsWith('image/') && ext !== 'svg' ? '' : '; charset=utf-8');
+};
+// Files are served by /api/file, which checks the signed-in session.
+export const fileUrl = p => '/api/file?path=' + encodeURIComponent(p);
+export const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
 // Reuse workspace downloads during a single warm function instance. Terminal and
 // Python tools often need the same source files; re-downloading them per call is wasteful.
@@ -35,10 +42,8 @@ export async function getWorkspaceSnapshot(sid, { limit = 200, filter = null } =
   const promise = (async () => {
     const listed = await lsFiles(sid);
     const selected = listed.filter(file => !filter || filter.test(file)).slice(0, limit);
-    const pairs = await Promise.all(selected.map(async file => {
-      try { return [file.path, await readFile(sid, file.path)]; }
-      catch (error) { return [file.path, `\n[Could not load ${file.path}: ${error.message}]`]; }
-    }));
+    const found = await readFilesBytes(sid, selected.map(file => file.path));
+    const pairs = selected.map(file => [file.path, found.has(file.path) ? found.get(file.path).toString('utf8') : `\n[Could not load ${file.path}: file not found]`]);
     const snapshot = { files: selected, contents: Object.fromEntries(pairs) };
     if ((workspaceVersions.get(key) || 0) === version) {
       snapshotCache.set(snapshotId, { version, snapshot, expiresAt: Date.now() + 45_000 });
@@ -52,9 +57,7 @@ export async function getWorkspaceSnapshot(sid, { limit = 200, filter = null } =
 }
 
 export async function lsFiles(sid, prefix = '') {
-  const base = root(sid);
-  const { blobs } = await list({ prefix: base + norm(prefix), limit: 1000 });
-  return blobs.map(b => ({ path: b.pathname.slice(base.length), size: b.size, url: b.url }));
+  return (await listFiles(sid, norm(prefix))).map(f => ({ path: f.path, size: f.size, url: fileUrl(f.path) }));
 }
 export const findFile = async (sid, p) => (await lsFiles(sid, p)).find(f => f.path === norm(p));
 
@@ -66,23 +69,23 @@ async function readSnapshotFile(sid, p) {
 }
 
 export async function readFile(sid, p) {
-  const f = await findFile(sid, p);
-  if (!f) throw new Error('No such file: ' + p);
-  return (await fetch(f.url + '?t=' + Date.now())).text();
+  const content = await readFileBytes(sid, norm(p));
+  if (!content) throw new Error('No such file: ' + p);
+  return content.toString('utf8');
 }
 export async function writeFile(sid, p, content) {
-  const ext = norm(p).split('.').pop();
-  const b = await put(root(sid) + norm(p), Buffer.isBuffer(content) ? content : String(content), {
-    access: 'public', addRandomSuffix: false, allowOverwrite: true,
-    contentType: (TYPES[ext] || 'text/plain') + (TYPES[ext]?.startsWith('image') ? '' : '; charset=utf-8'), cacheControlMaxAge: 0,
-  });
+  const path = norm(p);
+  if (!path) throw new Error('A file path is required.');
+  const data = Buffer.isBuffer(content) ? content : Buffer.from(String(content), 'utf8');
+  if (data.length > MAX_FILE_BYTES) throw new Error(`${path} is too large (${(data.length / 1048576).toFixed(1)} MB). Files can be at most ${MAX_FILE_BYTES / 1048576} MB.`);
+  await putFile(sid, path, data);
   invalidateWorkspace(sid);
-  return { path: norm(p), url: b.url, size: String(content).length };
+  return { path, url: fileUrl(path), size: String(content).length };
 }
 export async function rmPath(sid, p) {
-  const hits = (await lsFiles(sid, p)).filter(f => f.path === norm(p) || f.path.startsWith(norm(p) + '/'));
-  if (hits.length) { await del(hits.map(h => h.url)); invalidateWorkspace(sid); }
-  return hits.length;
+  const removed = await removeFiles(sid, norm(p));
+  if (removed) invalidateWorkspace(sid);
+  return removed;
 }
 
 const tok = s => (s.match(/"(?:\\.|[^"])*"|'[^']*'|\S+/g) || []).map(t => (/^["']/.test(t) ? t.slice(1, -1).replace(/\\n/g, '\n') : t));
@@ -156,24 +159,4 @@ export async function shell(sid, cmd) {
     try { out.push(await one(sid, line)); } catch (e) { out.push('error: ' + e.message); }
   }
   return out.join('\n').trim() || '(done)';
-}
-
-// Durable checkpoints let a long task resume across separate serverless invocations.
-export async function saveJob(sid, jobId, data) {
-  const path = `jobs/${String(sid || 'anon').replace(/[^\w-]/g, '')}/${String(jobId || '').replace(/[^\w-]/g, '')}.json`;
-  const blob = await put(path, JSON.stringify(data), {
-    access: 'public', addRandomSuffix: false, allowOverwrite: true,
-    contentType: 'application/json; charset=utf-8', cacheControlMaxAge: 0,
-  });
-  return blob.url;
-}
-
-export async function loadJob(sid, jobId) {
-  const path = `jobs/${String(sid || 'anon').replace(/[^\w-]/g, '')}/${String(jobId || '').replace(/[^\w-]/g, '')}.json`;
-  const { blobs } = await list({ prefix: path, limit: 1 });
-  const blob = blobs.find(item => item.pathname === path);
-  if (!blob) return null;
-  const response = await fetch(blob.url + (blob.url.includes('?') ? '&' : '?') + 't=' + Date.now());
-  if (!response.ok) throw new Error(`Could not load task checkpoint (${response.status})`);
-  return response.json();
 }

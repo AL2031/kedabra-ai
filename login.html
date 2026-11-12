@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sign in · Kedabra</title>
+<meta name="theme-color" content="#111214">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg?v=3">
+<link rel="icon" type="image/png" sizes="64x64" href="/favicon.png?v=3">
+<link rel="shortcut icon" href="/favicon.ico?v=3">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=3">
+<script>try{var t=localStorage.kd_theme||(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');document.documentElement.dataset.theme=t}catch(e){}</script>
+<style>
+:root{--bg:#0b0d14;--p1:#11141e;--p2:#191d2a;--bd:#272d3d;--tx:#f4f5fb;--mu:#929bb1;--ac:#9a8cff;--err:#ff7185;--ok:#55d99a;--sh:0 18px 54px #0006}
+[data-theme=light]{--bg:#f3f5fa;--p1:#fff;--p2:#f1f3f9;--bd:#dfe3ed;--tx:#1b2030;--mu:#737c91;--ac:#6d5cf5;--err:#d94362;--ok:#159b62;--sh:0 16px 46px #24304b13}
+*{box-sizing:border-box;margin:0}
+html,body{min-height:100%;background:var(--bg);color:var(--tx)}
+body{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:15px;letter-spacing:-.015em;display:grid;place-items:center;padding:24px;min-height:100vh}
+main{width:100%;max-width:380px}
+.brand{display:flex;align-items:center;gap:11px;justify-content:center;margin-bottom:22px}
+.mark{width:38px;height:38px;border-radius:12px;background:linear-gradient(140deg,#41465e,#242a3d);display:grid;place-items:center;color:#e5e2ff;font-weight:700;font-size:17px}
+.brand b{font-size:21px;letter-spacing:-.03em}
+.card{background:var(--p1);border:1px solid var(--bd);border-radius:18px;padding:22px;box-shadow:var(--sh)}
+.tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:var(--p2);border:1px solid var(--bd);border-radius:12px;padding:4px;margin-bottom:18px}
+.tabs button{border:0;background:transparent;color:var(--mu);font:inherit;font-weight:600;padding:9px;border-radius:9px;cursor:pointer}
+.tabs button[aria-selected=true]{background:var(--p1);color:var(--tx);box-shadow:0 1px 3px #0003}
+label{display:block;font-size:13px;color:var(--mu);margin:14px 0 6px}
+.field{position:relative}
+input{width:100%;font:inherit;color:var(--tx);background:var(--p2);border:1px solid var(--bd);border-radius:11px;padding:11px 13px;outline:none}
+input:focus-visible{border-color:var(--ac);box-shadow:0 0 0 3px color-mix(in srgb,var(--ac) 25%,transparent)}
+.field input{padding-right:62px}
+.show{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:var(--mu);font:inherit;font-size:13px;padding:6px 8px;border-radius:8px;cursor:pointer}
+.show:hover{color:var(--tx)}
+.hint{font-size:12.5px;color:var(--mu);margin-top:6px;line-height:1.45}
+.go{width:100%;margin-top:20px;border:0;border-radius:11px;padding:12px;font:inherit;font-weight:650;color:#fff;background:var(--ac);cursor:pointer}
+.go:disabled{opacity:.6;cursor:default}
+.msg{min-height:20px;margin-top:14px;font-size:13.5px;line-height:1.45}
+.msg.err{color:var(--err)}.msg.info{color:var(--mu)}
+.foot{margin-top:16px;text-align:center;font-size:12.5px;color:var(--mu);line-height:1.5}
+[hidden]{display:none!important}
+</style></head>
+<body>
+<main>
+  <div class="brand"><div class="mark">K</div><b>Kedabra</b></div>
+  <div class="card">
+    <div class="tabs" role="tablist" aria-label="Account">
+      <button type="button" role="tab" id="tabLogin" aria-selected="true">Sign in</button>
+      <button type="button" role="tab" id="tabSignup" aria-selected="false">Create account</button>
+    </div>
+    <form id="form" novalidate>
+      <label for="u">Username</label>
+      <input id="u" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="32" required>
+      <div id="uHint" class="hint" hidden>3–32 characters: letters, numbers, dot, dash or underscore.</div>
+
+      <label for="p">Password</label>
+      <div class="field"><input id="p" name="password" type="password" autocomplete="current-password" maxlength="200" required><button type="button" class="show" id="show" aria-label="Show password">Show</button></div>
+      <div id="pHint" class="hint" hidden>At least 8 characters. There is no email, so there is no automatic password reset. Store it somewhere safe.</div>
+
+      <div id="confirmWrap" hidden><label for="p2">Confirm password</label><input id="p2" type="password" autocomplete="new-password" maxlength="200"></div>
+      <div id="codeWrap" hidden><label for="code">Invite code</label><input id="code" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="200"></div>
+
+      <button class="go" id="go" type="submit">Sign in</button>
+      <div class="msg" id="msg" role="status" aria-live="polite"></div>
+    </form>
+  </div>
+  <div class="foot">Your chats stay in this browser. Your workspace files are tied to your account.</div>
+</main>
+<script>
+(function(){
+  var $=function(s){return document.querySelector(s)};
+  var mode='login',needCode=false,busy=false;
+  var form=$('#form'),msg=$('#msg'),go=$('#go');
+  function say(t,k){msg.textContent=t||'';msg.className='msg '+(k||'')}
+  function setMode(m,keep){
+    mode=m;var signup=m==='signup';
+    $('#tabLogin').setAttribute('aria-selected',String(!signup));$('#tabSignup').setAttribute('aria-selected',String(signup));
+    $('#confirmWrap').hidden=!signup;$('#pHint').hidden=!signup;$('#uHint').hidden=!signup;$('#codeWrap').hidden=!(signup&&needCode);
+    $('#p').setAttribute('autocomplete',signup?'new-password':'current-password');
+    go.textContent=signup?'Create account':'Sign in';if(!keep)say('');
+  }
+  $('#tabLogin').onclick=function(){setMode('login')};
+  $('#tabSignup').onclick=function(){setMode('signup')};
+  $('#show').onclick=function(){var p=$('#p'),show=p.type==='password';p.type=show?'text':'password';$('#p2').type=show?'text':'password';this.textContent=show?'Hide':'Show';this.setAttribute('aria-label',show?'Hide password':'Show password')};
+
+  if(/[?&]expired=1/.test(location.search))say('Your session ended. Please sign in again.','info');
+
+  // Already signed in? Go straight to the app. Otherwise learn whether an invite code is needed.
+  fetch('/api/auth',{credentials:'same-origin'}).then(function(r){return r.json()}).then(function(d){
+    if(d&&d.user){location.replace('/');return}
+    needCode=!!(d&&d.signupCodeRequired);setMode(mode,true);
+  }).catch(function(){});
+
+  form.addEventListener('submit',function(e){
+    e.preventDefault();if(busy)return;
+    var username=$('#u').value.trim().toLowerCase(),password=$('#p').value;
+    if(!username||!password){say('Enter a username and password.','err');return}
+    if(mode==='signup'&&password!==$('#p2').value){say('The two passwords do not match.','err');return}
+    var body={action:mode,username:username,password:password};
+    if(mode==='signup'&&needCode)body.inviteCode=$('#code').value;
+    busy=true;go.disabled=true;say(mode==='signup'?'Creating your account…':'Signing in…','info');
+    fetch('/api/auth',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+      .then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})})
+      .then(function(x){
+        if(!x.ok){say((x.d&&x.d.error)||'Something went wrong. Please try again.','err');busy=false;go.disabled=false;return}
+        // Accounts were added after the app was first used. The first account created in a
+        // browser keeps that browser's earlier chat history. Unfinished tasks are marked
+        // stopped so nothing is re-run by surprise (their server-side state is gone).
+        if(mode==='signup'){
+          try{var old=localStorage.getItem('kd_chats'),key='kd_chats:'+x.d.user.username;
+            if(old&&!localStorage.getItem(key)){
+              var chats=JSON.parse(old);
+              chats.forEach(function(c){(c.msgs||[]).forEach(function(m){if(m&&m.role==='assistant'&&m.jobId&&!m.done&&!m.failed){m.stopped=true;m.running=false}})});
+              localStorage.setItem(key,JSON.stringify(chats));
+            }
+            localStorage.removeItem('kd_chats');localStorage.removeItem('kd_sid');
+          }catch(e){}
+        }
+        location.replace('/');
+      })
+      .catch(function(){say('Could not reach the server. Check your connection and try again.','err');busy=false;go.disabled=false});
+  });
+  setMode('login',true);$('#u').focus();
+})();
+</script>
+</body></html>

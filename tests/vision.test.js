@@ -8,6 +8,9 @@ process.env.GOOGLE_API_KEY = 'test-google-key';
 process.env.GOOGLE_VISION_MODEL = 'gemini-2.5-pro';
 
 const realFetch = globalThis.fetch;
+process.env.AUTH_SECRET = 'test-auth-secret';
+const { signSession } = await import('../api/_auth.js');
+const COOKIE = 'kd_session=' + signSession({ uid: 'u1', sid: 'sid-1', username: 'tester' });
 const { default: handler, analyzeImages, validateImages } = await import('../api/vision.js?vision-tests');
 after(() => { globalThis.fetch = realFetch; });
 
@@ -47,7 +50,7 @@ test('compare mode sends the same prompt and image to Groq and Gemini', async ()
   };
 
   const response = mockResponse();
-  await handler({ method: 'POST', body: { model: 'both', prompt: 'Describe this image.', images: [image] } }, response);
+  await handler({ method: 'POST', headers: { cookie: COOKIE }, body: { model: 'both', prompt: 'Describe this image.', images: [image] } }, response);
   assert.equal(response.statusCode, 200);
   assert.equal(response.payload.results.length, 2);
   assert.deepEqual(new Set(response.payload.results.map(item => item.text)), new Set(['Groq vision result', 'Gemini vision result']));
@@ -58,14 +61,14 @@ test('compare mode sends the same prompt and image to Groq and Gemini', async ()
 
 test('rejects unsupported image MIME types', async () => {
   const response = mockResponse();
-  await handler({ method: 'POST', body: { model: 'qwen', prompt: 'Test', images: [{ mimeType: 'image/svg+xml', data: 'c3Zn' }] } }, response);
+  await handler({ method: 'POST', headers: { cookie: COOKIE }, body: { model: 'qwen', prompt: 'Test', images: [{ mimeType: 'image/svg+xml', data: 'c3Zn' }] } }, response);
   assert.equal(response.statusCode, 400);
   assert.match(response.payload.error, /PNG, JPEG or WebP/);
 });
 
 test('rejects more than three images', async () => {
   const response = mockResponse();
-  await handler({ method: 'POST', body: { model: 'qwen', prompt: 'Test', images: [image, image, image, image] } }, response);
+  await handler({ method: 'POST', headers: { cookie: COOKIE }, body: { model: 'qwen', prompt: 'Test', images: [image, image, image, image] } }, response);
   assert.equal(response.statusCode, 400);
   assert.match(response.payload.error, /three images/i);
 });
@@ -79,7 +82,7 @@ test('all mode runs available multimodal models for image input and excludes tex
     return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: 'Gemini result' }] } }] }), { status: 200 });
   };
   const response = mockResponse();
-  await handler({ method: 'POST', body: { model: 'all', prompt: 'Inspect.', images: [image] } }, response);
+  await handler({ method: 'POST', headers: { cookie: COOKIE }, body: { model: 'all', prompt: 'Inspect.', images: [image] } }, response);
   assert.equal(response.statusCode, 200);
   assert.equal(response.payload.results.length, 2);
   assert.equal(calls.some(url => url.includes('generativelanguage.googleapis.com')), true);
@@ -97,7 +100,7 @@ test('all mode includes the text-only reasoning model when no image is attached'
     return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: 'Gemini text result' }] } }] }), { status: 200 });
   };
   const response = mockResponse();
-  await handler({ method: 'POST', body: { model: 'all', prompt: 'Explain recursion.', images: [] } }, response);
+  await handler({ method: 'POST', headers: { cookie: COOKIE }, body: { model: 'all', prompt: 'Explain recursion.', images: [] } }, response);
   assert.equal(response.statusCode, 200);
   assert.equal(response.payload.results.length, 3);
   assert.equal(response.payload.results.some(item => item.label === 'Thinker'), true);

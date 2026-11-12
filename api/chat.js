@@ -1,8 +1,12 @@
 import vm from 'node:vm';
+import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { lsFiles, readFile, writeFile, shell, saveJob, loadJob, getWorkspaceSnapshot } from './_lib.js';
+import { lsFiles, readFile, writeFile, shell, getWorkspaceSnapshot } from './_lib.js';
 import { isProgressOnly, readToolCacheKey, findCachedRead, rememberRead, toolMutatesWorkspace } from './agent-guards.js';
 import { analyzeImages, validateImages } from './vision.js';
+import { requireUser } from './_auth.js';
+import { LEASE_MS, runtime, startCancelWatcher, validContinueToken, shouldContinueInBackground, scheduleContinuation } from './_background.js';
+import { getJobRow, createJobRow, saveJobData, claimJob, releaseJob, requestJobCancel, isJobCancelRequested, LeaseLostError } from './_store.js';
 import { mergeProviderToolCall, hasGoogleThoughtSignature, messagesForProvider, isRetryableProviderStatus } from './gemini-compat.js';
 
 const DAY = new Date().toDateString();
@@ -33,7 +37,7 @@ const MODEL_CATALOG = {
 };
 const badUntil = new Map();
 let roundRobin = 0;
-const INVOCATION_BUDGET_MS = 180_000;
+const INVOCATION_BUDGET_MS = Number(process.env.INVOCATION_BUDGET_MS) || 180_000;
 // Large reasoning models need more than 14s to finish a streamed response.
 const PROVIDER_TIMEOUT_MS = 35_000;
 const MAX_TOOL_OUTPUT = 5_000;
@@ -298,12 +302,26 @@ const TOOLS = [
 const SUBTOOLS = TOOLS.filter(tool => !['spawn_subagents', 'present_file'].includes(tool.function.name));
 const strip = value => String(value || '').replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#x27;|&#39;/g, "'").replace(/\s+/g, ' ').trim();
 
-async function search(query) {
+// A search provider that is rate limiting or unreachable. Callers stop retrying instead of waiting
+// out a timeout again on every attempt.
+export class SearchUnavailable extends Error {
+  constructor(reason) { super(reason); this.name = 'SearchUnavailable'; }
+}
+const SEARCH_TIMEOUT_MS = Number(process.env.SEARCH_TIMEOUT_MS) || 7_000;
+const SEARCH_DOWN_MS = 90_000;
+const SEARCH_DOWN_NOTE = 'Live web search is temporarily unavailable. Do not retry searching. Continue with what you already know and any pages you can open with fetch_url, and tell the user that live search was unavailable.';
+const isSearchOutage = error => error instanceof SearchUnavailable || ['TimeoutError', 'AbortError'].includes(error?.name) || /fetch failed|ECONN|ENOTFOUND|EAI_AGAIN/i.test(String(error?.message || error));
+
+export async function search(query) {
   if (process.env.TAVILY_API_KEY) {
-    const response = await fetch('https://api.tavily.com/search', {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.TAVILY_API_KEY },
-      body: JSON.stringify({ query, max_results: 5 }), signal: AbortSignal.timeout(12_000),
-    });
+    let response;
+    try {
+      response = await fetch('https://api.tavily.com/search', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.TAVILY_API_KEY },
+        body: JSON.stringify({ query, max_results: 5 }), signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS + 1_000),
+      });
+    } catch (error) { throw isSearchOutage(error) ? new SearchUnavailable(`Tavily did not respond (${error.name || 'network error'}).`) : error; }
+    if (response.status === 429 || response.status >= 500) throw new SearchUnavailable(`Tavily is unavailable (HTTP ${response.status}).`);
     if (!response.ok) throw new Error(`Search failed (${response.status})`);
     const seen = new Set();
     return ((await response.json()).results || []).filter(item => {
@@ -312,7 +330,12 @@ async function search(query) {
       seen.add(key); return true;
     }).slice(0, 5).map(item => ({ title: item.title, url: item.url, snippet: String(item.content || '').slice(0, 220) }));
   }
-  const response = await fetch('https://html.duckduckgo.com/html/?q=' + encodeURIComponent(query), { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Kedabra/1.0)' }, signal: AbortSignal.timeout(12_000) });
+  let response;
+  try {
+    response = await fetch('https://html.duckduckgo.com/html/?q=' + encodeURIComponent(query), { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Kedabra/1.0)' }, signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS) });
+  } catch (error) { throw isSearchOutage(error) ? new SearchUnavailable(`DuckDuckGo did not respond within ${SEARCH_TIMEOUT_MS / 1000}s.`) : error; }
+  // DuckDuckGo "soft blocks" servers by answering 202 (or 403/429) with a page that has no results.
+  if ([202, 403, 429].includes(response.status) || response.status >= 500) throw new SearchUnavailable(`DuckDuckGo is rate limiting searches from this server (HTTP ${response.status}).`);
   const html = await response.text();
   const results = [], regex = /class="result__a" href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
   let match;
@@ -320,7 +343,8 @@ async function search(query) {
     const target = match[1].match(/uddg=([^&]+)/);
     results.push({ title: strip(match[2]), url: target ? decodeURIComponent(target[1]) : match[1], snippet: strip(match[3]) });
   }
-  return results.length ? results : 'No results (search provider may be rate limiting).';
+  if (!results.length && /anomaly|captcha|unusual traffic|are you a human/i.test(html)) throw new SearchUnavailable('DuckDuckGo asked for a human check.');
+  return results.length ? results : 'No results found for this query. Try different keywords.';
 }
 
 function runJS(code) {
@@ -331,7 +355,7 @@ function runJS(code) {
   } catch (error) { return { logs: logs.join('\n'), error: String(error) }; }
 }
 
-async function runTool(name, args, { sid, send, tid, job, deadline, dead, modelId }) {
+export async function runTool(name, args, { sid, send, tid, job, deadline, dead, modelId }) {
   switch (name) {
     case 'web_search': {
       const query = String(args.query || '').trim().slice(0, 500);
@@ -339,8 +363,16 @@ async function runTool(name, args, { sid, send, tid, job, deadline, dead, modelI
       job.webSearchCache ||= [];
       const cached = job.webSearchCache.find(item => item.key === key);
       if (cached) return { cached: true, results: cached.results };
+      // After an outage, later searches in this task fail instantly instead of each waiting for a timeout.
+      if ((job.searchDownUntil || 0) > Date.now()) return { error: SEARCH_DOWN_NOTE };
       job.webSearchCount = (job.webSearchCount || 0) + 1;
-      const results = await search(query);
+      let results;
+      try { results = await search(query); }
+      catch (error) {
+        if (!isSearchOutage(error)) throw error;
+        job.searchDownUntil = Date.now() + SEARCH_DOWN_MS;
+        return { error: `${SEARCH_DOWN_NOTE} (${error.message})` };
+      }
       job.webSearchCache.push({ key, results });
       return results;
     }
@@ -476,6 +508,22 @@ async function agentLoop(conversation, options) {
       if (!nested) await checkpoint(job);
     }
 
+    // Searches and page fetches in one model turn do not depend on each other, so start them all
+    // now and wait for the slowest instead of running them one after another.
+    const inFlight = new Map();
+    if (pendingCalls.length > 1) {
+      for (const call of pendingCalls) {
+        const name = call.function.name;
+        if (name !== 'web_search' && name !== 'fetch_url') continue;
+        const shareKey = name + ':' + call.function.arguments;
+        if (!inFlight.has(shareKey)) {
+          let parsed; try { parsed = JSON.parse(call.function.arguments || '{}'); } catch { continue; }
+          const promise = runTool(name, parsed, { sid, send, tid: call.id, job, deadline, dead, modelId: activeModel }).catch(error => ({ error: error.message }));
+          inFlight.set(shareKey, promise);
+        }
+      }
+    }
+
     for (const call of pendingCalls) {
       if (dead?.()) throw new CancelRun();
       if (Date.now() >= deadline) throw new PauseRun();
@@ -495,7 +543,8 @@ async function agentLoop(conversation, options) {
           ? { cached: true, note: 'This exact read was already completed in this step and the earlier result is in the tool history. Do not call it again; continue the task.', previousReadLength: cached.output.length, repeatedReadNumber: cached.hits }
           : `CACHED WORKSPACE READ (unchanged since step ${cached.previousStep + 1}):\n${cached.output}`;
       } else {
-        try { output = await runTool(name, args, { sid, send, tid: call.id, job, deadline, dead, modelId: activeModel }); }
+        const started = inFlight.get(name + ':' + call.function.arguments);
+        try { output = started ? await started : await runTool(name, args, { sid, send, tid: call.id, job, deadline, dead, modelId: activeModel }); }
         catch (error) { output = { error: error.message }; }
         if (readKey) {
           const serializedForCache = typeof output === 'string' ? output : JSON.stringify(output);
@@ -526,9 +575,11 @@ async function agentLoop(conversation, options) {
   }
 }
 
-async function checkpoint(job) {
+// Each running task is owned by one worker; only the owner may save it (see saveJobData).
+const owners = new WeakMap();
+async function checkpoint(job, { release = false } = {}) {
   job.updatedAt = Date.now();
-  await saveJob(job.sid, job.jobId, job);
+  await saveJobData(job.sid, job.jobId, job, owners.get(job) || '', { release });
 }
 
 async function summarizeStep(job, deadline, send, dead) {
@@ -604,25 +655,92 @@ export default async function handler(req, res) {
   } });
   if (req.method !== 'POST') return res.status(405).end();
   const body = req.body || {};
-  const sid = String(body.sid || 'anon').slice(0, 100);
+  // The workspace id comes from the signed session, never from the request body.
+  // Only the server's own signed continuation request supplies it (verified below).
+  let sid;
+  if (body.background) sid = String(body.sid || '').slice(0, 100);
+  else { const user = requireUser(req, res); if (!user) return; sid = user.sid; }
   const jobId = String(body.jobId || '').replace(/[^\w-]/g, '').slice(0, 100);
   if (!jobId) return res.status(400).json({ error: 'Missing jobId.' });
 
-  res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-cache, no-store, no-transform');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
-  const send = event => { if (!gone && !res.writableEnded) res.write(JSON.stringify(event) + '\n'); };
-  let gone = false;
-  req.on('aborted', () => { gone = true; });
-  res.on('close', () => { if (!res.writableEnded) gone = true; });
-  res.flushHeaders?.();
+  // Closing the tab no longer stops a task, so Stop sends an explicit signal.
+  if (body.action === 'cancel') {
+    try { await requestJobCancel(sid, jobId); return res.status(200).json({ ok: true }); }
+    catch (error) { return res.status(500).json({ error: error.message || String(error) }); }
+  }
+
+  // Server-to-server continuation: answer immediately, keep working after the
+  // response via waitUntil, so no browser needs to stay connected.
+  if (body.background) {
+    if (!validContinueToken(sid, jobId, req.headers['x-kedabra-continue'])) return res.status(403).json({ error: 'Invalid continuation token.' });
+    res.status(202).json({ accepted: true });
+    runtime.waitUntil(runJob({ req, res, body, sid, jobId, background: true }).catch(() => {}));
+    return;
+  }
+  return runJob({ req, res, body, sid, jobId, background: false });
+}
+
+// Status events for a runner that is attaching to a job another runner owns.
+// Only idempotent event types are sent (not "plan"), because the client appends plans.
+function sendAttached(send, job) {
+  const step = job?.plan?.steps?.[job.stepIndex];
+  if (step) send({ t: 'step', index: job.stepIndex, total: job.plan.steps.length, title: step.title, model: step.model, modelName: step.modelName || MODEL_CATALOG[step.model]?.label || step.model, status: 'running' });
+  sendStatus(send, 'Running in the background', 'This task is continuing on the server. This view updates when the next step finishes.');
+}
+
+async function runJob({ req, res, body, sid, jobId, background }) {
+  const owner = randomUUID();
+  // clientGone only stops streaming to the browser. It never stops the task.
+  let clientGone = false, cancelled = false, holdsLease = false, stopWatcher = () => {};
+  if (!background) {
+    res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-store, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    req.on('aborted', () => { clientGone = true; });
+    res.on('close', () => { if (!res.writableEnded) clientGone = true; });
+    res.flushHeaders?.();
+  }
+  const send = event => { if (!background && !clientGone && !res.writableEnded) res.write(JSON.stringify(event) + '\n'); };
+  const isDead = () => cancelled;
   const deadline = Date.now() + INVOCATION_BUDGET_MS;
   let job;
   let incomingImages = [];
 
+  // End this invocation with progress saved and schedule the next one on the server.
+  const pause = async detail => {
+    // A Stop that arrived between watcher polls must not schedule another hop.
+    if (cancelled || await isJobCancelRequested(sid, jobId)) {
+      cancelled = true; job.status = 'cancelled'; await checkpoint(job, { release: true }); return;
+    }
+    job.status = 'paused';
+    job.hops = (job.hops || 0) + 1;
+    await checkpoint(job, { release: true });
+    if (detail) send({ t: 'paused', detail });
+    if (shouldContinueInBackground(job)) scheduleContinuation({ req, sid, jobId });
+  };
+  const replaySettled = () => {
+    if (job.phase === 'completed') {
+      if (job.finalAnswer) { send({ t: 'reset_all_text' }); send({ t: 'delta', text: job.finalAnswer }); }
+      send({ t: 'done', answer: job.finalAnswer || '' });
+      return true;
+    }
+    if (job.status === 'failed') { send({ t: 'error', error: job.error || 'The task failed.' }); return true; }
+    return false;
+  };
+
   try {
-    job = await loadJob(sid, jobId);
+    let row = await getJobRow(sid, jobId);
+    if (row?.cancelRequested) {
+      // Stop was pressed. Mark the task cancelled unless another worker still holds it
+      // (that worker sees the flag and stops itself).
+      if (row.job && row.job.status !== 'cancelled' && await claimJob(sid, jobId, owner, LEASE_MS)) {
+        owners.set(row.job, owner); row.job.status = 'cancelled';
+        await checkpoint(row.job, { release: true });
+      }
+      return;
+    }
+    job = row?.job || null;
     if (!job) {
       const messages = Array.isArray(body.messages) ? body.messages.filter(message => message?.content || message?.role === 'user').slice(-14) : [];
       const lastUserIndex = messages.map(message => message.role).lastIndexOf('user');
@@ -640,26 +758,46 @@ export default async function handler(req, res) {
         phase: incomingImages.length ? 'vision' : (history.length ? 'context' : 'planning'), plan: null, stepIndex: 0, summary: '',
         visualContext: '', visualModel: '', visualImageCount: incomingImages.length, visualFiles: incomingImages.map(image => image.name),
         stepConversation: null, stepResult: '', stepActions: [], stepToolCalls: 0, stepReadCache: [], workspaceRevision: 0, completedSteps: [], status: 'running', createdAt: Date.now(), updatedAt: Date.now(),
+        hops: 0, errorRetries: 0,
       };
-      await checkpoint(job);
-    } else if (job.phase === 'vision' && !job.visualContext) {
+      const created = await createJobRow(sid, jobId, job, owner, Date.now() + LEASE_MS);
+      if (created) { owners.set(job, owner); holdsLease = true; }
+      else {
+        // A duplicate request created it first; continue from what is stored.
+        row = await getJobRow(sid, jobId);
+        if (!row || row.cancelRequested || !row.job) { job = null; return; }
+        job = row.job;
+      }
+    }
+    if (!holdsLease && job.phase === 'vision' && !job.visualContext) {
       incomingImages = validateImages(body.images || []);
       if (!incomingImages.length) throw new Error('Visual references are needed to resume this task. Reattach the image(s) and retry.');
     }
 
-    if (job.phase === 'completed') {
-      if (job.finalAnswer) { send({ t: 'reset_all_text' }); send({ t: 'delta', text: job.finalAnswer }); }
-      send({ t: 'done', answer: job.finalAnswer || '' });
-      return res.end();
-    }
+    if (replaySettled()) return;
 
-    while (!gone && Date.now() < deadline) {
+    // Take the lock so a browser and a background hop never run the same task at once.
+    // The database grants it to exactly one of any number of simultaneous requests.
+    if (!holdsLease) {
+      if (!(await claimJob(sid, jobId, owner, LEASE_MS))) { sendAttached(send, job); job = null; return; }
+      holdsLease = true;
+      // Re-read after claiming: another worker may have saved progress since we first looked.
+      const fresh = await getJobRow(sid, jobId);
+      if (!fresh?.job || fresh.cancelRequested) { await releaseJob(sid, jobId, owner); holdsLease = false; return; }
+      job = fresh.job;
+      owners.set(job, owner);
+      if (replaySettled()) { await releaseJob(sid, jobId, owner); holdsLease = false; return; }
+      job.status = 'running';
+    }
+    stopWatcher = startCancelWatcher(sid, jobId, () => { cancelled = true; });
+
+    while (!cancelled && Date.now() < deadline) {
       if (job.phase === 'vision') {
         sendStatus(send, 'Inspecting visual references', 'Sending the attached images to a vision-capable model before planning the task.');
         const visual = await inspectImagesWithRetries(
           `The user's request is: ${job.request}\n\nAnalyze the attached image references for this task. Provide a detailed, implementation-ready visual specification. For UI screenshots, describe hierarchy, layout, spacing, alignment, typography, colors, visible text, controls, states, and inconsistencies. For design references, identify style, composition, objects, materials, and important proportions. For diagrams or charts, explain structure and labels. Clearly separate visible facts from uncertain interpretations. Focus on details that a coding or reasoning model can act on.`,
           incomingImages,
-          { deadline, send, dead: () => gone },
+          { deadline, send, dead: isDead },
         );
         job.visualContext = String(visual.text || '').slice(0, 8_000);
         job.visualModel = `${visual.label || 'Vision model'} · ${visual.model || 'unknown model'}`;
@@ -673,7 +811,7 @@ export default async function handler(req, res) {
 
       if (job.phase === 'context') {
         sendStatus(send, 'Summarizing conversation context', 'Compressing earlier decisions and project state before planning this task.');
-        job.summary = await summarizeHistory(job, deadline, send, () => gone);
+        job.summary = await summarizeHistory(job, deadline, send, isDead);
         job.history = [];
         job.phase = 'planning';
         await checkpoint(job);
@@ -681,7 +819,7 @@ export default async function handler(req, res) {
 
       if (job.phase === 'planning') {
         sendStatus(send, directPlan(job.request) ? 'Starting focused response' : 'Planning task');
-        job.plan = await makePlan(job, deadline, send, () => gone);
+        job.plan = await makePlan(job, deadline, send, isDead);
         job.phase = 'executing';
         await checkpoint(job);
         send({ t: 'plan', plan: job.plan });
@@ -705,7 +843,7 @@ export default async function handler(req, res) {
           job.workspaceRevision ||= 0;
           await checkpoint(job);
         }
-        job.stepResult = await agentLoop(job.stepConversation, { sid, send, job, deadline, dead: () => gone, tools: TOOLS, modelId: step.model });
+        job.stepResult = await agentLoop(job.stepConversation, { sid, send, job, deadline, dead: isDead, tools: TOOLS, modelId: step.model });
         send({ t: 'step_done', index: job.stepIndex, title: step.title });
         // For a one-step task, the execution model has already produced the
         // user-facing answer. An extra summary/finalization call is pure cost
@@ -713,9 +851,9 @@ export default async function handler(req, res) {
         if (job.plan.steps.length === 1 && job.stepResult && !isProgressOnly(job.stepResult)) {
           job.finalAnswer = job.stepResult;
           job.phase = 'completed'; job.status = 'completed';
-          await checkpoint(job);
+          await checkpoint(job, { release: true });
           send({ t: 'done', answer: job.finalAnswer });
-          return res.end();
+          return;
         }
         job.phase = 'summarizing';
         await checkpoint(job);
@@ -723,7 +861,7 @@ export default async function handler(req, res) {
 
       if (job.phase === 'summarizing') {
         sendStatus(send, 'Updating project memory', `Summarizing ${job.plan.steps[job.stepIndex].title} so later steps receive only the useful context.`);
-        job.summary = await summarizeStep(job, deadline, send, () => gone);
+        job.summary = await summarizeStep(job, deadline, send, isDead);
         job.completedSteps.push({ title: job.plan.steps[job.stepIndex].title, result: String(job.stepResult || '').slice(0, 1_500) });
         send({ t: 'summary', summary: job.summary });
         job.stepIndex++;
@@ -736,32 +874,39 @@ export default async function handler(req, res) {
 
       if (job.phase === 'finalizing') {
         sendStatus(send, 'Preparing final response', 'Using the compact execution summary rather than replaying the full tool history.');
-        job.finalAnswer = await finalAnswer(job, deadline, send, () => gone);
+        job.finalAnswer = await finalAnswer(job, deadline, send, isDead);
         job.phase = 'completed'; job.status = 'completed';
-        await checkpoint(job);
+        await checkpoint(job, { release: true });
         send({ t: 'done', answer: job.finalAnswer });
-        return res.end();
+        return;
       }
     }
 
-    if (gone) {
-      job.status = 'paused';
-      await checkpoint(job);
-      return res.end();
-    }
-    job.status = 'paused';
-    await checkpoint(job);
-    send({ t: 'paused', detail: 'Saved progress. Continuing in a fresh serverless request.' });
+    if (cancelled) throw new CancelRun();
+    await pause('Saved progress. Continuing in a fresh serverless request.');
   } catch (error) {
-    if (error instanceof PauseRun) {
-      if (job) { job.status = 'paused'; await checkpoint(job); }
-      send({ t: 'paused', detail: 'All available model routes are being retried. Progress is checkpointed.' });
-    } else if (error instanceof CancelRun || gone) {
-      if (job) { job.status = 'paused'; await checkpoint(job); }
-    } else {
-      send({ t: 'error', error: error.message || String(error) });
-    }
+    try {
+      if (error instanceof LeaseLostError) {
+        holdsLease = false; // another worker owns the task now; stop quietly
+      } else if (error instanceof PauseRun) {
+        if (job && holdsLease) await pause('All available model routes are being retried. Progress is checkpointed.');
+      } else if (error instanceof CancelRun) {
+        if (job && holdsLease) { job.status = 'cancelled'; await checkpoint(job, { release: true }); }
+      } else {
+        const message = error.message || String(error);
+        if (job && holdsLease && background && (job.errorRetries || 0) < 3) {
+          // A transient infrastructure error should not silently end an unattended task.
+          job.errorRetries = (job.errorRetries || 0) + 1;
+          job.lastError = message;
+          await pause();
+        } else {
+          send({ t: 'error', error: message });
+          if (job && holdsLease) { job.status = 'failed'; job.error = message; await checkpoint(job, { release: true }); }
+        }
+      }
+    } catch { /* the original outcome is already reported or will be retried */ }
   } finally {
+    stopWatcher();
     if (!res.writableEnded) res.end();
   }
 }

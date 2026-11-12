@@ -1,3 +1,4 @@
+import { requireUser } from './_auth.js';
 const groqKeys = [...new Set(
   [1, 2, 3, 4].map(i => process.env['GROQ_API_KEY_' + i])
     .concat((process.env.GROQ_API_KEYS || '').split(','))
@@ -169,6 +170,7 @@ export default async function handler(req, res) {
     });
   }
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed.' });
+  if (!requireUser(req, res)) return;
   try {
     const body = req.body || {};
     const prompt = String(body.prompt || '').trim().slice(0, 6_000);
