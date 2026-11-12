@@ -72,6 +72,34 @@ export function messagesForProvider(messages, provider) {
   });
 }
 
+// Gemini 3 validates that the first tool call of every assistant turn in the history
+// carries a thought signature. Tool calls written by another provider (for example when a
+// rate-limited Groq model falls back to Gemini partway through a task) have none, and Google
+// answers 400 "Function call is missing a thought_signature". Google documents this
+// placeholder for calls that Gemini did not produce; it skips validation for that call.
+// Real signatures (and parallel calls after the first, which never have one) are untouched.
+export const GOOGLE_SKIP_SIGNATURE = 'skip_thought_signature_validator';
+
+export function withPlaceholderSignatures(messages) {
+  return (messages || []).map(message => {
+    if (!message || message.role !== 'assistant' || !Array.isArray(message.tool_calls) || !message.tool_calls.length) return message;
+    const first = message.tool_calls[0];
+    if (!first || hasGoogleThoughtSignature(first)) return message;
+    const tool_calls = message.tool_calls.slice();
+    tool_calls[0] = mergeProviderToolCall({ ...first }, { extra_content: { google: { thought_signature: GOOGLE_SKIP_SIGNATURE } } });
+    return { ...message, tool_calls };
+  });
+}
+
+export const isGemini3 = model => /^gemini-3(?:\.|-)/i.test(String(model || ''));
+
+// The messages to send to one provider. Google-only metadata is removed for other providers,
+// and Gemini 3 gets placeholders for any tool call it did not write itself.
+export function messagesForRequest(messages, { provider, model } = {}) {
+  const prepared = messagesForProvider(messages, provider);
+  return provider === 'google' && isGemini3(model) ? withPlaceholderSignatures(prepared) : prepared;
+}
+
 export function isRetryableProviderStatus(status) {
   return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
 }
